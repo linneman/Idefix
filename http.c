@@ -9,16 +9,12 @@
 
 /* -- includes -------------------------------------------------------------------*/
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include "http.h"
+#include "socket_io.h"
 
 
 
@@ -409,11 +405,11 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
   {
     snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\n", HttpAckTable[HTTP_ACK_INTERNAL_ERROR].id, HttpAckTable[HTTP_ACK_INTERNAL_ERROR].txt );
     len = strlen( linebuf );
-    send( socket, linebuf, len, 0 );
+    HTTP_SOCKET_SEND( socket, linebuf, len, 0 );
   }
   else 
   {
-    if( send( socket, ackbuf, i, 0 ) < 0 )
+    if( HTTP_SOCKET_SEND( socket, ackbuf, i, 0 ) < 0 )
       error = -2;
     
     fwrite( ackbuf, 1, i, stdout ); 
@@ -503,14 +499,14 @@ static int http_get( int socket, char *pbuf )
   }
   
   /* write header/content separation line */
-  if( send( socket, "\n\n", 2, 0 ) < 0 )
+  if( HTTP_SOCKET_SEND( socket, "\n\n", 2, 0 ) < 0 )
     error = -1;
   fwrite( "\n\n", 1, 2, stdout ); 
   
   /* read file blockwise and send it to the server */
   do {
     bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
-    bytes_written = send( socket, buf, bytes_read, 0 );
+    bytes_written = HTTP_SOCKET_SEND( socket, buf, bytes_read, 0 );
     fwrite( buf, 1, bytes_read, stdout ); 
   } while( bytes_read > 0  &&  bytes_written == bytes_read );
   

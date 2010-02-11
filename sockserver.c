@@ -18,8 +18,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include "http.h"
 
+#include "http.h"
+#include "socket_io.h"
 
 
 /* -- public prototypes ----------------------------------------------------------*/
@@ -98,7 +99,7 @@ int service_socket_loop(void)
     
       do 
       {
-        size = recv( new_socket, buffer, MAX_HTML_BUF_LEN - 1, 0 );
+        size = HTTP_SOCKET_RECV( new_socket, buffer, MAX_HTML_BUF_LEN - 1, 0 );
         if( size > 0 )
           buffer[size] = '\0';
         
