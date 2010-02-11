@@ -1,0 +1,8 @@
+# .gitignore for gen-dsp
+
+.project
+.cproject
+*.o
+.DS_Store
+*.d
+build
