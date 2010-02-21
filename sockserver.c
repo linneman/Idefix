@@ -21,6 +21,7 @@
 
 #include "http.h"
 #include "socket_io.h"
+#include "objmem.h"
 
 
 /* -- public prototypes ----------------------------------------------------------*/
@@ -40,16 +41,17 @@
  *******************************************************************************/
 int service_socket_loop(void) 
 {
+  HTTP_OBJ            http_obj;           /* HTTP thread's object, we keep it on the stack here */
+  HTTP_OBJ*           this = & http_obj;
+  
   int                 create_socket, new_socket;
   socklen_t           addrlen;
   ssize_t             size;
   struct sockaddr_in  address;
   const int           y = 1;
-  char*               buffer;
   int                 error;
   
-  buffer = malloc( MAX_HTML_BUF_LEN );
-  if( buffer == NULL )
+  if( HTTP_ObjInit( this, HTML_SERVER_NAME ) != 0 )
   {
     fprintf( stderr, "Could not create buffer error!\n" );
     return -1;
@@ -63,7 +65,6 @@ int service_socket_loop(void)
   else 
   {
     fprintf( stderr, "Could not create socket error!\n" );
-    free( buffer );
     return -1;
   }
 
@@ -79,7 +80,6 @@ int service_socket_loop(void)
             sizeof (address)) != 0 ) 
   {
     fprintf( stderr, "The port %d is already in use!\n", address.sin_port );
-    free( buffer );
     return -1;
   }
   
@@ -97,16 +97,21 @@ int service_socket_loop(void)
       printf ("Client (%s) is connected ...\n",
               inet_ntoa (address.sin_addr));
     
+      this->socket = new_socket;
       do 
       {
-        size = HTTP_SOCKET_RECV( new_socket, buffer, MAX_HTML_BUF_LEN - 1, 0 );
+        /* Remember stack frame for later restauration */
+        OBJ_ALLOC_STACK_FRAME( this );
+
+      
+        size = HTTP_SOCKET_RECV( new_socket, this->rcvbuf, MAX_HTML_BUF_LEN - 1, 0 );
         if( size > 0 )
-          buffer[size] = '\0';
+          this->rcvbuf[size] = '\0';
         
         printf( "received http request!\n");
-        printf( "data sent by client: %s\n", buffer );
+        printf( "data sent by client: %s\n", this->rcvbuf );
         
-        error = ProcessHttpRequest( new_socket, buffer );
+        error = HTTP_ProcessRequest( this );
         if( error != 0 )
         {
           fprintf( stderr, "error while rocessing of http request occured!\n");
@@ -119,7 +124,11 @@ int service_socket_loop(void)
         send( new_socket, buffer, strlen (buffer), 0 );
         // flush( new_socket );
         */ 
-         
+        
+        
+        /* Check object's memory and release stack frame */
+        OBJ_CHECK( this );
+        OBJ_RELEASE_STACK_FRAME( this );
          
       } while( ! error );
       
@@ -128,7 +137,6 @@ int service_socket_loop(void)
   }
   
   close (create_socket);
-  free( buffer );
   
   return EXIT_SUCCESS;
 }

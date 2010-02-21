@@ -423,13 +423,14 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
 /*!
  *  Process HTTP GET command
  */
-static int http_get( int socket, char *pbuf )
+static int http_get( HTTP_OBJ* this )
 {
   FILE*           fp;
   const int       tmp_size = HTML_MAX_URL_SIZE + HTML_MAX_PATH_LEN;
-  char            tmp[tmp_size];
-  char            url_path[HTML_MAX_PATH_LEN];
-  char            search_path[HTML_MAX_URL_SIZE];
+  char            *tmp; // tmp[tmp_size];
+  char            *url_path; // url_path[HTML_MAX_PATH_LEN];
+  char            *search_path; // search_path[HTML_MAX_URL_SIZE];
+  
   char            buf[HTML_CHUNK_SIZE];
   int             path_sep_idx, error;
   long            file_size;
@@ -437,9 +438,18 @@ static int http_get( int socket, char *pbuf )
   char*           p_ack_add_on_str;
   int             i, j, bytes_read, bytes_written;
   
-  printf("received GET command: %s\n", pbuf );
+  printf("received GET command: %s\n", this->rcvbuf );
   
-  error = _http_get_url_from_request( tmp, pbuf );
+    
+  /* allocate temporary used memory  */
+  tmp           = OBJ_STACK_ALLOC( tmp_size );
+  url_path      = OBJ_STACK_ALLOC( HTML_MAX_PATH_LEN );
+  search_path  = OBJ_STACK_ALLOC( HTML_MAX_URL_SIZE );
+  if( search_path == NULL )
+    return -1;
+  
+  
+  error = _http_get_url_from_request( tmp, this->rcvbuf );
   if( error != 0 )
     return error;
   
@@ -471,7 +481,7 @@ static int http_get( int socket, char *pbuf )
   fp = fopen( tmp, "r" );
   if( fp == NULL )
   {
-    _http_ack( socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
     return -4;
   }
   
@@ -491,7 +501,7 @@ static int http_get( int socket, char *pbuf )
   }
   
   /* send the ack message */
-  error = _http_ack( socket, HTTP_ACK_OK, HttpMimeTypeTable[mimetype].txt, file_size, p_ack_add_on_str );
+  error = _http_ack( this->socket, HTTP_ACK_OK, HttpMimeTypeTable[mimetype].txt, file_size, p_ack_add_on_str );
   if( error )
   {
     fclose( fp );
@@ -499,20 +509,21 @@ static int http_get( int socket, char *pbuf )
   }
   
   /* write header/content separation line */
-  if( HTTP_SOCKET_SEND( socket, "\n\n", 2, 0 ) < 0 )
+  if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
     error = -1;
   fwrite( "\n\n", 1, 2, stdout ); 
   
   /* read file blockwise and send it to the server */
   do {
     bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
-    bytes_written = HTTP_SOCKET_SEND( socket, buf, bytes_read, 0 );
+    bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
     fwrite( buf, 1, bytes_read, stdout ); 
   } while( bytes_read > 0  &&  bytes_written == bytes_read );
   
   printf("\n");
   
   fclose( fp );
+  
   
   // in case of html we indicate connection close by error code
   error = -1;
@@ -524,7 +535,7 @@ static int http_get( int socket, char *pbuf )
 /*!
  *  Process HTTP POST command
  */
-static int http_post( int socket, char *pbuf )
+static int http_post( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -535,7 +546,7 @@ static int http_post( int socket, char *pbuf )
 /*!
  *  Process HTTP HEAD command
  */
-static int http_head( int socket, char *pbuf )
+static int http_head( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -546,7 +557,7 @@ static int http_head( int socket, char *pbuf )
 /*!
  *  Process HTTP PUT command
  */
-static int http_put( int socket, char *pbuf )
+static int http_put( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -557,7 +568,7 @@ static int http_put( int socket, char *pbuf )
 /*!
  *  Process HTTP DELETE command
  */
-static int http_delete( int socket, char *pbuf )
+static int http_delete( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -568,7 +579,7 @@ static int http_delete( int socket, char *pbuf )
 /*!
  *  Process HTTP TRACE command
  */
-static int http_trace( int socket, char *pbuf )
+static int http_trace( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -579,7 +590,7 @@ static int http_trace( int socket, char *pbuf )
 /*!
  *  Process HTTP OPTIONS command
  */
-static int http_options( int socket, char *pbuf )
+static int http_options( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -590,7 +601,7 @@ static int http_options( int socket, char *pbuf )
 /*!
  *  Process HTTP CONNECT command
  */
-static int http_connect( int socket, char *pbuf )
+static int http_connect( HTTP_OBJ* this )
 {
   /*
    *  not implemented yet
@@ -604,7 +615,43 @@ static int http_connect( int socket, char *pbuf )
 
 
 /*******************************************************************************
- * ProcessHttpRequest() 
+ * HTTP_ObjInit() 
+ *                                                                         */ /*!
+ * Initialize main HTTP instance. It keeps a local heap holding persistent
+ * data required for the complete lifetime of a server thread and a local
+ * stack for storing temporary information required for processing one http
+ * request.
+ *                                                                              
+ * Function parameters
+ *     - server_name: server name
+ *     - rcvbuf:      pointer to buffer of size MAX_HTML_BUF_LEN
+ *
+ * Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ * 
+ *******************************************************************************/
+int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
+{
+  OBJ_INIT( this );
+  
+  /* initialize components */
+  this->server_name = OBJ_HEAP_ALLOC( strlen( server_name ) + 1 );
+  if( this->server_name == NULL )
+    return -1;
+
+  strcpy( this->server_name, server_name ); 
+  this->socket = -1;
+
+  this->rcvbuf = OBJ_HEAP_ALLOC( 10000 );
+  if( this->rcvbuf == NULL )
+    return -1;
+  
+  return 0;
+}
+
+
+/*******************************************************************************
+ * HTTP_ProcessRequest() 
  *                                                                         */ /*!
  * Possible HTTP Commands are 
  *    GET, POST, HEAD, PUT, DELETE, TRACE, OPTIONS, CONNECT.
@@ -612,48 +659,47 @@ static int http_connect( int socket, char *pbuf )
  * Not all of them are implemented currently.
  *                                                                              
  * Function parameters
- *     - socket: file descriptor for reading / writing http data
- *     - pbuf:   pointer to buffer of size MAX_HTML_BUF_LEN
+ *     - this:   pointer to HTTP Object
  *
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
  * 
  *******************************************************************************/
-int ProcessHttpRequest( int socket, char *pbuf )
+int HTTP_ProcessRequest( HTTP_OBJ* this )
 {
   int retcode = 0;
   
-  if( strncmp( pbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
+  if( strncmp( this->rcvbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
   {
-    retcode = http_get( socket, pbuf );
+    retcode = http_get( this );
   }
-  else if( strncmp( pbuf, HTTP_POST, sizeof(HTTP_POST)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_POST, sizeof(HTTP_POST)-1 ) == 0 )
   {
-    retcode = http_post( socket, pbuf );
+    retcode = http_post( this );
   }
-  else if( strncmp( pbuf, HTTP_HEAD, sizeof(HTTP_HEAD)-1) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_HEAD, sizeof(HTTP_HEAD)-1) == 0 )
   {
-    retcode = http_head( socket, pbuf );
+    retcode = http_head( this );
   }
-  else if( strncmp( pbuf, HTTP_PUT, sizeof(HTTP_PUT)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_PUT, sizeof(HTTP_PUT)-1 ) == 0 )
   {
-    retcode = http_put( socket, pbuf );
+    retcode = http_put( this );
   }
-  else if( strncmp( pbuf, HTTP_DELETE, sizeof(HTTP_DELETE)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_DELETE, sizeof(HTTP_DELETE)-1 ) == 0 )
   {
-    retcode = http_delete( socket, pbuf );
+    retcode = http_delete( this );
   }
-  else if( strncmp( pbuf, HTTP_TRACE, sizeof(HTTP_TRACE)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_TRACE, sizeof(HTTP_TRACE)-1 ) == 0 )
   {
-    retcode = http_trace( socket, pbuf );
+    retcode = http_trace( this );
   }
-  else if( strncmp( pbuf, HTTP_OPTIONS, sizeof(HTTP_OPTIONS)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_OPTIONS, sizeof(HTTP_OPTIONS)-1 ) == 0 )
   {
-    retcode = http_options( socket, pbuf );
+    retcode = http_options( this );
   }
-  else if( strncmp( pbuf, HTTP_CONNECT, sizeof(HTTP_CONNECT)-1 ) == 0 )
+  else if( strncmp( this->rcvbuf, HTTP_CONNECT, sizeof(HTTP_CONNECT)-1 ) == 0 )
   {
-    retcode = http_connect( socket, pbuf );
+    retcode = http_connect( this );
   }  
   else 
   {
