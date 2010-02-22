@@ -109,10 +109,10 @@ int service_socket_loop(void)
           this->rcvbuf[size] = '\0';
         
         printf( "received http request!\n");
-        printf( "data sent by client: %s\n", this->rcvbuf );
+        // printf( "data sent by client: %s\n", this->rcvbuf );
         
         error = HTTP_ProcessRequest( this );
-        if( error != 0 )
+        if( error < 0 )
         {
           fprintf( stderr, "error while rocessing of http request occured!\n");
         }

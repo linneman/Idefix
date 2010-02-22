@@ -294,8 +294,17 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
 /*!
  * Release the last stack from the given object 
  */
-#define OBJ_RELEASE_STACK_FRAME( this )        { assert( this->framePtrIndex > 0 ); this->stackPtr = this->framePtrTab[ --this->framePtrIndex] ;  }
+#define _OBJ_RELEASE_STACK_FRAME( this )        { assert( this->framePtrIndex > 0 ); this->stackPtr = this->framePtrTab[ --this->framePtrIndex ] ;  }
 
+#ifdef _OBJ_MEM_CHK
+#define OBJ_RELEASE_STACK_FRAME(this)                                 \
+{                                                                     \
+    _OBJ_RELEASE_STACK_FRAME(this);                                   \
+    this->stackAddrTableTop = this->framePtrIndex;                    \
+}
+#else
+#define OBJ_RELEASE_STACK_FRAME(this)   _OBJ_RELEASE_STACK_FRAME(this)
+#endif
 
 
 /*!

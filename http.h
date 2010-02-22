@@ -10,6 +10,7 @@
 #ifndef _HTTP_H
 #define _HTTP_H
 
+#include <stdio.h>
 #include "objmem.h"
 
 
@@ -54,9 +55,17 @@
 typedef struct 
 {
   /* public members */
-  char* server_name;
-  int   socket;
-  char* rcvbuf;
+  char* server_name;    /* name of the http server */
+  int   socket;         /* file respectively socket descriptor */
+  char* rcvbuf;         /* receiving buffer ( header and body ) */
+  
+  
+  /* private temporary data */
+  char* url_path;       /* first part of the URL */
+  char* search_path;    /* search path of the URL (separated by ?) */
+  char* frl;            /* absolute path within local file system for given url */
+  long  content_len;    /* size of the content within body in bytes */
+  int   mimetyp;        /* mime typ */
   
   
   /*

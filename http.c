@@ -419,80 +419,104 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
 }
 
 
-
 /*!
- *  Process HTTP GET command
+ *  Parse HTTP header
+ *
+ *  result is written to:
+ *
+ *    this->url_path
+ *    this->search_path
+ *    this->frl
+ *    this->mimetyp
  */
-static int http_get( HTTP_OBJ* this )
+static int http_parse_header( HTTP_OBJ* this )
 {
-  FILE*           fp;
-  const int       tmp_size = HTML_MAX_URL_SIZE + HTML_MAX_PATH_LEN;
-  char            *tmp; // tmp[tmp_size];
-  char            *url_path; // url_path[HTML_MAX_PATH_LEN];
-  char            *search_path; // search_path[HTML_MAX_URL_SIZE];
+  const int       frl_size = HTML_MAX_URL_SIZE + HTML_MAX_PATH_LEN;
+  char            *frl;         /* absolute path within local file system for given url */
+  char            *url_path;    /* first part of the URL */
+  char            *search_path;  /* search path of the URL (separated by ?) */
   
-  char            buf[HTML_CHUNK_SIZE];
   int             path_sep_idx, error;
-  long            file_size;
-  HTTP_MIME_TYPE  mimetype;
-  char*           p_ack_add_on_str;
-  int             i, j, bytes_read, bytes_written;
-  
-  printf("received GET command: %s\n", this->rcvbuf );
-  
+  int             i, j;
+    
     
   /* allocate temporary used memory  */
-  tmp           = OBJ_STACK_ALLOC( tmp_size );
-  url_path      = OBJ_STACK_ALLOC( HTML_MAX_PATH_LEN );
-  search_path  = OBJ_STACK_ALLOC( HTML_MAX_URL_SIZE );
-  if( search_path == NULL )
+  
+  this->url_path      = url_path    = OBJ_STACK_ALLOC( HTML_MAX_PATH_LEN );
+  this->search_path   = search_path = OBJ_STACK_ALLOC( HTML_MAX_URL_SIZE );
+  this->frl           = frl         = OBJ_STACK_ALLOC( frl_size );
+  if( this->search_path == NULL )
     return -1;
   
   
-  error = _http_get_url_from_request( tmp, this->rcvbuf );
+  error = _http_get_url_from_request( frl, this->rcvbuf );
   if( error != 0 )
     return error;
   
   /* extract url path */
-  path_sep_idx = _http_search_path_index_from_url( tmp );
-  strncpy( url_path, tmp, path_sep_idx );
+  path_sep_idx = _http_search_path_index_from_url( frl );
+  strncpy( url_path, this->frl, path_sep_idx );
   url_path[path_sep_idx] = '\0';
   
   /* extract search path */
-  for( i=path_sep_idx+1, j=0; tmp[i] !='\0' && j < HTML_MAX_URL_SIZE; ++i, j++ )
-    search_path[j] = tmp[i];
+  for( i=path_sep_idx+1, j=0; frl[i] !='\0' && j < HTML_MAX_URL_SIZE; ++i, j++ )
+    search_path[j] = frl[i];
   
   search_path[j]='\0';
   
   
-  mimetype = _http_get_mime_type_from_filename( url_path );
+  this->mimetyp = _http_get_mime_type_from_filename( url_path );
   
   printf( "URL-PATH: %s\n", url_path );
-  printf( "MIME-TYPE: %s\n", HttpMimeTypeTable[mimetype].txt );
+  printf( "MIME-TYPE: %s\n", HttpMimeTypeTable[this->mimetyp].txt );
   printf( "SEARCH-PATH: %s\n", search_path );
   printf( "---- HTTP ANSWER ------>\n");
   
   /* concatenate resource file name */
-  strcpy( tmp, HTML_ROOT_DIR );
-  strncat( tmp, url_path, tmp_size - strlen( HTML_ROOT_DIR ) );
-  tmp[tmp_size-1]='\0';
-  
-  /* generate server response, open requested resource */
-  fp = fopen( tmp, "r" );
-  if( fp == NULL )
+  strcpy( frl, HTML_ROOT_DIR );
+  strncat( frl, url_path, frl_size - strlen( HTML_ROOT_DIR ) );
+  frl[frl_size-1]='\0';
+    
+  return 0;
+}
+
+
+/*!
+ *  Implementation of header generation
+ *  
+ *  determines resource size and writes appropriate header to socket
+ *
+ *  in case this->frl != NULL, the content_len is determined from
+ *  the given file
+ */
+static int _http_head( HTTP_OBJ* this )
+{
+  FILE*           fp;
+  char*           p_ack_add_on_str;
+  int             error = 0, error2;
+      
+  if( this->frl != NULL )
   {
-    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
-    return -4;
+    /* generate server response, open requested resource */
+    fp = fopen( this->frl, "r" );
+    if( fp == NULL )
+    {
+      _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+      return -4;
+    }
+    
+    /* compute the file size of the requested resource and generate ack */
+    fseek( fp, 0, SEEK_END );
+    this->content_len = ftell( fp );
+    fseek( fp, 0, SEEK_SET );
+    fclose( fp );
   }
   
-  /* compute the file size of the requested resource and generate ack */
-  fseek( fp, 0, SEEK_END );
-  file_size = ftell( fp );
-  fseek( fp, 0, SEEK_SET );
-  
   /* determine whether we put the string "Conneciton:close\n" in the ack message ( only in case for html pages ) */
-  if( mimetype == HTTP_MIME_TEXT_HTML )
+  if( this->mimetyp == HTTP_MIME_TEXT_HTML )
   {
+    // in case of html we indicate connection close by positive result code
+    error = 1;
     p_ack_add_on_str = "Connection: close\n";
   }
   else 
@@ -501,33 +525,84 @@ static int http_get( HTTP_OBJ* this )
   }
   
   /* send the ack message */
-  error = _http_ack( this->socket, HTTP_ACK_OK, HttpMimeTypeTable[mimetype].txt, file_size, p_ack_add_on_str );
-  if( error )
+  error2 = _http_ack( this->socket, HTTP_ACK_OK, HttpMimeTypeTable[this->mimetyp].txt, this->content_len, p_ack_add_on_str );
+  if( error2 )
   {
-    fclose( fp );
-    return error;
+    return error2;
   }
   
   /* write header/content separation line */
   if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
     error = -1;
-  fwrite( "\n\n", 1, 2, stdout ); 
+    
+  return error;
+}
+
+
+/*!
+ *  Process HTTP HEAD command (wrapper)
+ */
+static int http_head( HTTP_OBJ* this )
+{
+  int error;
+  
+  printf("received HEAD command: %s\n", this->rcvbuf );
+
+  /* retrieve url_path, search_path and frl (file resouce location) */
+  error = http_parse_header( this );
+  if( error < 0 )
+  {
+    return error;
+  }
+
+
+  return _http_head( this );
+}
+
+
+/*!
+ *  Process HTTP GET command
+ */
+static int http_get( HTTP_OBJ* this )
+{
+  FILE*           fp;
+  char            buf[HTML_CHUNK_SIZE];
+  int             bytes_read, bytes_written;
+  int             error = 0;
+  
+  printf("received GET command: %s\n", this->rcvbuf );
+
+  /* retrieve url_path, search_path and frl (file resouce location) */
+  error = http_parse_header( this );
+  if( error < 0 )
+  {
+    return error;
+  }
+  
+  /* generate header */
+  error = _http_head( this );
+  if( error < 0 )
+  {
+    return error;
+  }
+  
+  fp = fopen( this->frl, "r" );
+  if( fp == NULL )
+  {
+    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+    return -5;
+  }
   
   /* read file blockwise and send it to the server */
   do {
     bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
     bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
-    fwrite( buf, 1, bytes_read, stdout ); 
+    // fwrite( buf, 1, bytes_read, stdout ); 
   } while( bytes_read > 0  &&  bytes_written == bytes_read );
   
   printf("\n");
   
   fclose( fp );
-  
-  
-  // in case of html we indicate connection close by error code
-  error = -1;
-  
   return error;
 }
 
@@ -537,22 +612,40 @@ static int http_get( HTTP_OBJ* this )
  */
 static int http_post( HTTP_OBJ* this )
 {
-  /*
-   *  not implemented yet
-   */
-  return -1;
+  const char  testanswer[] = "Hallo Welt!\n";
+  int         error = 0;
+   
+  printf("received POST command: %s\n", this->rcvbuf );
+  printf("->: \n%s\n", this->rcvbuf );
+
+  /* retrieve url_path, search_path and frl (file resouce location) */
+  error = http_parse_header( this );
+  if( error < 0 )
+  {
+    return error;
+  }
+
+  /* @todo: insert CGI handler here */ 
+  // ...
+  
+  /* generate header */
+  error = _http_head( this );
+  if( error < 0 )
+  {
+    return error;
+  }
+
+  
+  /* test answer */
+  if( 1 )
+  {
+    HTTP_SOCKET_SEND( this->socket, testanswer, sizeof(testanswer), 0 );
+  }
+   
+   
+  return error;
 }
 
-/*!
- *  Process HTTP HEAD command
- */
-static int http_head( HTTP_OBJ* this )
-{
-  /*
-   *  not implemented yet
-   */
-  return -1;
-}
 
 /*!
  *  Process HTTP PUT command
@@ -632,6 +725,8 @@ static int http_connect( HTTP_OBJ* this )
  *******************************************************************************/
 int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
 {
+  /* Initialize object internals */
+  memset( this, 0, sizeof( HTTP_OBJ ) );
   OBJ_INIT( this );
   
   /* initialize components */
@@ -645,6 +740,7 @@ int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
   this->rcvbuf = OBJ_HEAP_ALLOC( 10000 );
   if( this->rcvbuf == NULL )
     return -1;
+  
   
   return 0;
 }
