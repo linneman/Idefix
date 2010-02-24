@@ -49,10 +49,70 @@
 #define HTTP_OBJ_SIZE       ( MAX_HTML_BUF_LEN + 2000 )
 
 
+/*!
+ *  Maximum allowed CGI handlers
+ */
+#define HTTP_MAX_CGI_HANDLERS   20
+
+
+/*!
+ *  HTTP method ID's
+ */
+#define HTTP_GET_ID           0x01
+#define HTTP_POST_ID          0x02
+#define HTTP_HEAD_ID          0x04
+#define HTTP_PUT_ID           0x08
+#define HTTP_DELETE_ID        0x10
+#define HTTP_TRACE_ID         0x20
+#define HTTP_OPTIONS_ID       0x40
+#define HTTP_CONNECT_ID       0x80
+ 
+
+/*!
+ *  HTTP page not found string
+ */
+#define HTTP_PAGE_NOT_FOUND_ERROR                             \
+  "<body><html>"                                              \
+  "<h1>" HTML_SERVER_NAME ": PAGE NOT FOUND ERROR!" "</h1>"   \
+  "</body></html>"
+  
+ 
 
 /* -- public types    -----------------------------------------------------------*/
 
+
+/*!
+ *  CGI callback handler
+ *
+ *  Function parameters
+ *      - this:      pointer to HTTP_OBJ of used thread
+ *      - method:    HTTP method (GET or POST )
+ *      - url_path:  url_path for triggering handler
+ *
+ *   Returnparameter
+ *
+ *      - R:         0 in case of success, otherwise error code
+ */
+struct _HTTP_OBJ;
+typedef int (* HTTP_CGI_HANDLER)( struct _HTTP_OBJ* this );
+
+
+/*
+ *  hash type for CGI handlers
+ */
 typedef struct 
+{
+  int               handler_id;
+  int               method_id_mask;
+  char*             url_path;
+  HTTP_CGI_HANDLER  handler;
+} HTTP_CGI_HASH;
+
+
+/*!
+ *  Pseudo HTTP class
+ */
+typedef struct _HTTP_OBJ
 {
   /* public members */
   char* server_name;    /* name of the http server */
@@ -61,12 +121,16 @@ typedef struct
   
   
   /* private temporary data */
+  int   method_id;      /* http method ID */
   char* url_path;       /* first part of the URL */
   char* search_path;    /* search path of the URL (separated by ?) */
   char* frl;            /* absolute path within local file system for given url */
   long  content_len;    /* size of the content within body in bytes */
   int   mimetyp;        /* mime typ */
   
+  /* cgi handler table, handlers with more specific search paths are served first */
+  HTTP_CGI_HASH    cgi_handler_tab[HTTP_MAX_CGI_HANDLERS];
+  int              cgi_handler_tab_top;
   
   /*
    * declare local memory management struct members with 
@@ -124,6 +188,29 @@ int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name );
  * 
  *******************************************************************************/
 int HTTP_ProcessRequest( HTTP_OBJ* this );
+
+
+/*******************************************************************************
+ * HTTP_AddCgiHanlder() 
+ *                                                                         */ /*!
+ * Add a CGI handler to a given HTTP object. 
+ *                                                                              
+ * Function parameters
+ *     - this:      pointer to HTTP Object
+ *     - handler:   cgi handler
+ *     - method:    METHOD to trigger handler ( usually HTTP_GET_ID and/or HTTP_POST_ID )
+ *     - url_path:  trigger url, more specific search paths are served first
+ *    
+ * Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ * 
+ *******************************************************************************/
+int HTTP_AddCgiHanlder( 
+  HTTP_OBJ* this, 
+  HTTP_CGI_HANDLER handler, 
+  const int method_id_mask, 
+  const char* url_path );
+
 
 
 #endif /* #ifndef _HTTP_H */

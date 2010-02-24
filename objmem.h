@@ -194,7 +194,7 @@ typedef struct  {
 #ifdef _OBJ_MEM_CHK
   /* debug implementation */
   #define OBJ_DELCARE_LOCAL_HEAP( size )                                  \
-    _OBJ_DELCARE_LOCAL_HEAP( size);                                       \
+    _OBJ_DELCARE_LOCAL_HEAP( size );                                      \
     OBJ_MEM_CHK_DESC    stackDescTable[ OBJ_DEBUG_ADDR_TABLE_SIZE ];      \
     OBJ_MEM_CHK_DESC    heapDescTable[ OBJ_DEBUG_ADDR_TABLE_SIZE ];       \
     int                 stackAddrTableTop;                                \
@@ -229,8 +229,8 @@ typedef struct
  *  the memory needs to be aligned in the very most cases.
  *  Use OBJ_HEAP_ALLOC() and OBJ_STACK_ALLOC() instead.
  */
-#define OBJ_ALLOC_BYTES_FORM_STACK( bytes )    ( (void *)( ((this->stackPtr-=(bytes)) > this->heapPtr ) ? this->stackPtr : NULL) )
-#define OBJ_ALLOC_BYTES_FORM_HEAP( bytes )     ( (void *)( ((this->heapPtr+=(bytes)) < this->stackPtr ) ? this->heapPtr : NULL) )
+#define OBJ_ALLOC_BYTES_FORM_STACK( bytes )    ( (void *)( ((this->stackPtr-=(bytes)) > this->heapPtr ) ? (this->stackPtr) : (this->stackPtr+=(bytes), NULL) ) )
+#define OBJ_ALLOC_BYTES_FORM_HEAP( bytes )     ( (void *)( ((this->heapPtr+=(bytes)) < this->stackPtr ) ? (this->heapPtr-(bytes)) : (this->heapPtr-=(bytes), NULL) ) )
 
 
 /*
@@ -263,11 +263,11 @@ typedef struct
 char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTable[], int tableIndex );
 
 #ifdef _OBJ_MEM_CHK
-#define OBJ_STACK_ALLOC(bytes)                                                                          \
-  (                                                                                                     \
-    ( _OBJ_STACK_ALLOC( bytes + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                          \
-    _OBJ_init_chk_frame( this->stackPtr, bytes, this->stackDescTable, this->stackAddrTableTop++ ) :     \
-    NULL                                                                                                \
+#define OBJ_STACK_ALLOC(bytes)                                                                            \
+  (                                                                                                       \
+    ( _OBJ_STACK_ALLOC( ( bytes ) + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                        \
+    _OBJ_init_chk_frame( this->stackPtr, bytes, this->stackDescTable, this->stackAddrTableTop++ ) :       \
+    NULL                                                                                                  \
   )
 #else
 #define OBJ_STACK_ALLOC(bytes)  _OBJ_STACK_ALLOC(bytes)
@@ -275,11 +275,11 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
 
 
 #ifdef _OBJ_MEM_CHK
-#define OBJ_HEAP_ALLOC(bytes)                                                                           \
-  (                                                                                                     \
-    ( _OBJ_HEAP_ALLOC( bytes + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                           \
-    _OBJ_init_chk_frame( this->heapPtr, bytes, this->heapDescTable,this->heapAddrTableTop++ ) :         \
-    NULL                                                                                                \
+#define OBJ_HEAP_ALLOC(bytes)                                                                             \
+  (                                                                                                       \
+    ( _OBJ_HEAP_ALLOC( ( bytes ) + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                         \
+    _OBJ_init_chk_frame( this->heapPtr - ( bytes ) - OBJ_PREFIX_LEN - OBJ_POSTFIX_LEN, bytes, this->heapDescTable,this->heapAddrTableTop++ ) : \
+    NULL                                                                                                  \
   )
 #else
 #define OBJ_HEAP_ALLOC(bytes)  _OBJ_HEAP_ALLOC(bytes)
@@ -404,24 +404,24 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
  *
  */
  
-#define _OBJ_INIT(this)                                         \
-{                                                               \
-  this->heapPtr       = this->objmem;                           \
-  this->stackPtr      = this->objmem + sizeof( this->objmem );  \
-  this->framePtrIndex = 0;                                      \
+#define _OBJ_INIT(this)                                               \
+{                                                                     \
+  this->heapPtr       = this->objmem;                                 \
+  this->stackPtr      = this->objmem + sizeof( this->objmem );        \
+  this->framePtrIndex = 0;                                            \
 }
 
 #ifdef _OBJ_MEM_CHK
   /* debug implementation */
-  #define OBJ_INIT(this)                                        \
-  {                                                             \
-    _OBJ_INIT(this);                                            \
-    this->stackAddrTableTop = 0;                                \
-    this->heapAddrTableTop = 0;                                 \
+  #define OBJ_INIT(this)                                              \
+  {                                                                   \
+    _OBJ_INIT(this);                                                  \
+    this->stackAddrTableTop = 0;                                      \
+    this->heapAddrTableTop = 0;                                       \
   }
 #else
   /* release implementation */
-  #define OBJ_INIT(this)                                        \
+  #define OBJ_INIT(this)                                              \
      _OBJ_INIT(this); 
 #endif
 

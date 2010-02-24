@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6F8DFF751135AF05000F2014 /* cgi.c in Sources */ = {isa = PBXBuildFile; fileRef = 6F8DFF741135AF05000F2014 /* cgi.c */; };
 		6FBCA0CE112350D500389CB6 /* http.c in Sources */ = {isa = PBXBuildFile; fileRef = 6FBCA0CD112350D500389CB6 /* http.c */; };
 		6FBCA0E911235BC500389CB6 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = 6FBCA0E811235BC500389CB6 /* main.c */; };
 		6FFBEEA1113179FC00A724D9 /* objmem.c in Sources */ = {isa = PBXBuildFile; fileRef = 6FFBEE9F113179FC00A724D9 /* objmem.c */; };
@@ -29,6 +30,8 @@
 
 /* Begin PBXFileReference section */
 		08FB7796FE84155DC02AAC07 /* sockserver.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = sockserver.c; sourceTree = "<group>"; };
+		6F8DFF731135AF05000F2014 /* cgi.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = cgi.h; sourceTree = "<group>"; };
+		6F8DFF741135AF05000F2014 /* cgi.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = cgi.c; sourceTree = "<group>"; };
 		6FBCA0CC112350D500389CB6 /* http.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = http.h; sourceTree = "<group>"; };
 		6FBCA0CD112350D500389CB6 /* http.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = http.c; sourceTree = "<group>"; };
 		6FBCA0E411235B7E00389CB6 /* sockserver.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = sockserver.h; sourceTree = "<group>"; };
@@ -64,6 +67,8 @@
 		08FB7795FE84155DC02AAC07 /* Source */ = {
 			isa = PBXGroup;
 			children = (
+				6F8DFF731135AF05000F2014 /* cgi.h */,
+				6F8DFF741135AF05000F2014 /* cgi.c */,
 				6FBCA11C1124880B00389CB6 /* socket_io.h */,
 				6FBCA0E411235B7E00389CB6 /* sockserver.h */,
 				6FBCA0CC112350D500389CB6 /* http.h */,
@@ -142,6 +147,7 @@
 				6FBCA0CE112350D500389CB6 /* http.c in Sources */,
 				6FBCA0E911235BC500389CB6 /* main.c in Sources */,
 				6FFBEEA1113179FC00A724D9 /* objmem.c in Sources */,
+				6F8DFF751135AF05000F2014 /* cgi.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

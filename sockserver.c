@@ -22,7 +22,7 @@
 #include "http.h"
 #include "socket_io.h"
 #include "objmem.h"
-
+#include "cgi.h"
 
 /* -- public prototypes ----------------------------------------------------------*/
 
@@ -51,12 +51,20 @@ int service_socket_loop(void)
   const int           y = 1;
   int                 error;
   
-  if( HTTP_ObjInit( this, HTML_SERVER_NAME ) != 0 )
+  if( ( error = HTTP_ObjInit( this, HTML_SERVER_NAME ) ) != 0 )
   {
     fprintf( stderr, "Could not create buffer error!\n" );
-    return -1;
+    return error;
   }
-  
+
+#if 1
+  if( ( error = RegisterCgiHandlers( this ) ) != 0 )
+  {
+    fprintf( stderr, "Could not register CGI handlers!\n" );
+    return error;    
+  }
+#endif 
+
   printf("Server Started ...");
   if ((create_socket = socket (AF_INET, SOCK_STREAM, 0)) > 0)
   {
@@ -65,7 +73,7 @@ int service_socket_loop(void)
   else 
   {
     fprintf( stderr, "Could not create socket error!\n" );
-    return -1;
+    return create_socket;
   }
 
   

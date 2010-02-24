@@ -419,6 +419,43 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
 }
 
 
+/*
+ *  Invokes CGI handler and returns handler ID if match was found, otherwise -1
+ *
+ *  handler_return_code - pointer to int variable for storing handler's return code
+ */
+int _call_cgi_handler( HTTP_OBJ* this, int* handler_return_code )
+{
+  HTTP_CGI_HASH*    cgi_handler_tab     = this->cgi_handler_tab;
+  const int         cgi_handler_tab_top = this->cgi_handler_tab_top;
+  char*             handler_url_path;
+  char*             url_path = this->url_path;
+  int               i, j, found, handler_id = -1;
+    
+  for( i=0; i < cgi_handler_tab_top; ++i )
+  {
+    handler_url_path = cgi_handler_tab[i].url_path;
+    for( j=0, found = 1; handler_url_path[j]!='\0'  &&  j < HTML_MAX_URL_SIZE; ++j )
+    {
+      if( url_path[j] != handler_url_path[j] )
+      {
+        found = 0;
+        break;
+      }
+    }
+    
+    if( found && ( this->method_id & cgi_handler_tab[i].method_id_mask ) )
+    {
+      handler_id = cgi_handler_tab[i].handler_id;
+      *handler_return_code = (*cgi_handler_tab[i].handler)( this );
+      break;
+    }
+  }
+  
+  return handler_id;
+}
+
+
 /*!
  *  Parse HTTP header
  *
@@ -515,7 +552,7 @@ static int _http_head( HTTP_OBJ* this )
   /* determine whether we put the string "Conneciton:close\n" in the ack message ( only in case for html pages ) */
   if( this->mimetyp == HTTP_MIME_TEXT_HTML )
   {
-    // in case of html we indicate connection close by positive result code
+    /* in case of html we indicate connection close by positive result code */
     error = 1;
     p_ack_add_on_str = "Connection: close\n";
   }
@@ -569,6 +606,7 @@ static int http_get( HTTP_OBJ* this )
   char            buf[HTML_CHUNK_SIZE];
   int             bytes_read, bytes_written;
   int             error = 0;
+  int             handler_return_code;
   
   printf("received GET command: %s\n", this->rcvbuf );
 
@@ -578,31 +616,43 @@ static int http_get( HTTP_OBJ* this )
   {
     return error;
   }
-  
-  /* generate header */
-  error = _http_head( this );
-  if( error < 0 )
+    
+  if( _call_cgi_handler( this, & handler_return_code ) >= 0 )
   {
-    return error;
+    /* if cgi handler was found, do nothing but indicate to disconnect stream */
+    error = 1;
+  }
+  else 
+  {
+    /* otherwise deliver static content (html, javascript, jpeg, etc) */
+  
+    /* generate header */
+    error = _http_head( this );
+    if( error < 0 )
+    {
+      return error;
+    }
+  
+    /* open and copy static content from file system */
+    fp = fopen( this->frl, "r" );
+    if( fp == NULL )
+    {
+      _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+      return -5;
+    }
+    
+    /* read file blockwise and send it to the server */
+    do {
+      bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
+      bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
+      // fwrite( buf, 1, bytes_read, stdout ); 
+    } while( bytes_read > 0  &&  bytes_written == bytes_read );
+    
+    printf("\n");
+    
+    fclose( fp );
   }
   
-  fp = fopen( this->frl, "r" );
-  if( fp == NULL )
-  {
-    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
-    return -5;
-  }
-  
-  /* read file blockwise and send it to the server */
-  do {
-    bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
-    bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
-    // fwrite( buf, 1, bytes_read, stdout ); 
-  } while( bytes_read > 0  &&  bytes_written == bytes_read );
-  
-  printf("\n");
-  
-  fclose( fp );
   return error;
 }
 
@@ -612,7 +662,7 @@ static int http_get( HTTP_OBJ* this )
  */
 static int http_post( HTTP_OBJ* this )
 {
-  const char  testanswer[] = "Hallo Welt!\n";
+  int         handler_return_code;
   int         error = 0;
    
   printf("received POST command: %s\n", this->rcvbuf );
@@ -625,24 +675,19 @@ static int http_post( HTTP_OBJ* this )
     return error;
   }
 
-  /* @todo: insert CGI handler here */ 
-  // ...
-  
-  /* generate header */
-  error = _http_head( this );
-  if( error < 0 )
+  /* invoke CGI handler */ 
+  if( _call_cgi_handler( this, & handler_return_code ) >= 0 )
   {
-    return error;
+    /* if cgi handler was found, do nothing but indicate to disconnect stream */
+    error = 1;
+  }
+  else 
+  {
+    /* generate page not found error */
+    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+    error = -1;
   }
 
-  
-  /* test answer */
-  if( 1 )
-  {
-    HTTP_SOCKET_SEND( this->socket, testanswer, sizeof(testanswer), 0 );
-  }
-   
-   
   return error;
 }
 
@@ -737,7 +782,7 @@ int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
   strcpy( this->server_name, server_name ); 
   this->socket = -1;
 
-  this->rcvbuf = OBJ_HEAP_ALLOC( 10000 );
+  this->rcvbuf = OBJ_HEAP_ALLOC( MAX_HTML_BUF_LEN );
   if( this->rcvbuf == NULL )
     return -1;
   
@@ -767,34 +812,42 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
   
   if( strncmp( this->rcvbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
   {
+    this->method_id = HTTP_GET_ID;
     retcode = http_get( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_POST, sizeof(HTTP_POST)-1 ) == 0 )
   {
+    this->method_id = HTTP_POST_ID;
     retcode = http_post( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_HEAD, sizeof(HTTP_HEAD)-1) == 0 )
   {
+    this->method_id = HTTP_HEAD_ID;
     retcode = http_head( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_PUT, sizeof(HTTP_PUT)-1 ) == 0 )
   {
+    this->method_id = HTTP_PUT_ID;
     retcode = http_put( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_DELETE, sizeof(HTTP_DELETE)-1 ) == 0 )
   {
+    this->method_id = HTTP_DELETE_ID;
     retcode = http_delete( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_TRACE, sizeof(HTTP_TRACE)-1 ) == 0 )
   {
+    this->method_id = HTTP_TRACE_ID;
     retcode = http_trace( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_OPTIONS, sizeof(HTTP_OPTIONS)-1 ) == 0 )
   {
+    this->method_id = HTTP_OPTIONS_ID;
     retcode = http_options( this );
   }
   else if( strncmp( this->rcvbuf, HTTP_CONNECT, sizeof(HTTP_CONNECT)-1 ) == 0 )
   {
+    this->method_id = HTTP_CONNECT_ID;
     retcode = http_connect( this );
   }  
   else 
@@ -803,4 +856,57 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
   }
   
   return( retcode );
+}
+
+
+/*
+ *  helper comparison function for sorting the cgi_hash_tab
+ */
+static int _cgi_hash_comp( const void* a, const void* b )
+{
+  return strlen( ((HTTP_CGI_HASH *)b)->url_path ) - strlen( ((HTTP_CGI_HASH *)a)->url_path );
+}
+
+
+/*******************************************************************************
+ * HTTP_AddCgiHanlder() 
+ *                                                                         */ /*!
+ * Add a CGI handler to a given HTTP object. 
+ *                                                                              
+ * Function parameters
+ *     - this:      pointer to HTTP Object
+ *     - handler:   cgi handler
+ *     - method:    METHOD to trigger handler ( usually HTTP_GET_ID and/or HTTP_POST_ID )
+ *     - url_path:  trigger url, more specific search paths are served first
+ *    
+ * Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ * 
+ *******************************************************************************/
+int HTTP_AddCgiHanlder( 
+  HTTP_OBJ* this, 
+  HTTP_CGI_HANDLER handler, 
+  const int method_id_mask, 
+  const char* url_path )
+{
+  HTTP_CGI_HASH*  hashPtr;
+  int             handler_id = this->cgi_handler_tab_top;
+
+  /* check for handler table overflow */
+  if( ! ( handler_id < HTTP_MAX_CGI_HANDLERS ) )
+    return -1;
+    
+  /* insert handler into http object */
+  hashPtr = & this->cgi_handler_tab[handler_id];
+  hashPtr->handler        = handler;
+  hashPtr->handler_id     = handler_id;
+  hashPtr->method_id_mask = method_id_mask;
+  hashPtr->url_path       = OBJ_HEAP_ALLOC( strlen( url_path ) + 1 );
+  strcpy( hashPtr->url_path, url_path );
+  ++this->cgi_handler_tab_top;
+  
+  /* sort handler table from most to least specific URL paths */
+  qsort( this->cgi_handler_tab, this->cgi_handler_tab_top, sizeof( HTTP_CGI_HASH ), _cgi_hash_comp );
+  
+  return 0;
 }
