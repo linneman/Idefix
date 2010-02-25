@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 #include "cgi.h"
 
 
@@ -25,9 +26,12 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
 {
   char  content[1024]; 
   
-   sprintf( content, 
+  this->mimetyp = HTTP_MIME_TEXT_HTML;
+  this->disconnect = true;
+  
+  sprintf( content, 
     "<html><body>\n" 
-    "<h1>This Content has been created dynamically!</h1>"
+    "<h1>This Content has been created dynamically!</h1>\n"
     "<p>************************** TestCgiHandler triggered! **************************</p>\n" 
     "<p>*** method_id : %d</p>\n"
     "<p>*** url_path : %s</p>\n"
@@ -37,6 +41,7 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
     this->method_id, this->url_path, this->search_path
     ) ;
   
+  HTTP_SendHeader( this, HTTP_ACK_OK );
   HTTP_SOCKET_SEND( this->socket, content, strlen( content ), 0 );
     
   return 0;

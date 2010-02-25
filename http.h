@@ -69,14 +69,39 @@
  
 
 /*!
- *  HTTP page not found string
+ *  HTTP mime types
  */
-#define HTTP_PAGE_NOT_FOUND_ERROR                             \
-  "<body><html>"                                              \
-  "<h1>" HTML_SERVER_NAME ": PAGE NOT FOUND ERROR!" "</h1>"   \
-  "</body></html>"
-  
+typedef enum {
+  HTTP_MIME_UNDEFINED,
+  HTTP_MIME_TEXT_HTML,
+  HTTP_MIME_TEXT_CSS,
+  HTTP_MIME_TEXT_PLAIN,
+  HTTP_MIME_IMAGE_JPEG,
+  HTTP_MIME_IMAGE_PNG,
+  HTTP_MIME_IMAGE_GIF,
+  HTTP_MIME_IMAGE_TIFF,
+  HTTP_MIME_APPLICATION_JAVASCRIPT,
+  HTTP_MIME_APPLICATION_JSON,
+  HTTP_MIME_APPLICATION_XML,
+  HTTP_MIME_APPLICATION_INDEX,
+  HTTP_MIME_AUDIO_MP4,
+  HTTP_MIME_AUDIO_MPEG,
+  HTTP_MIME_AUDIO_SPEEX,
+  HTTP_MIME_MULTIPART_FORM_DATA,
+  HTTP_MIME_MULTIPART_ALTERNATIVE,
+} HTTP_MIME_TYPE;
+
+
+/*!
+ *  HTTP Header status codes
+ */
+typedef enum {
+  HTTP_ACK_OK,                /* 200 OK */
+  HTTP_ACK_NOT_FOUND,         /* 404 Not Found */
+  HTTP_ACK_INTERNAL_ERROR     /* 500 Internal Server Error */
+} HTTP_ACK_KEY;
  
+
 
 /* -- public types    -----------------------------------------------------------*/
 
@@ -127,6 +152,7 @@ typedef struct _HTTP_OBJ
   char* frl;            /* absolute path within local file system for given url */
   long  content_len;    /* size of the content within body in bytes */
   int   mimetyp;        /* mime typ */
+  int   disconnect;     /* disconnect request if not zero */
   
   /* cgi handler table, handlers with more specific search paths are served first */
   HTTP_CGI_HASH    cgi_handler_tab[HTTP_MAX_CGI_HANDLERS];
@@ -211,6 +237,21 @@ int HTTP_AddCgiHanlder(
   const int method_id_mask, 
   const char* url_path );
 
+
+/*******************************************************************************
+ * HTTP_SendHeader() 
+ *                                                                         */ /*!
+ * Sends HTTP Header of given HTTP Object 
+ *                                                                              
+ * Function parameters
+ *     - this:      pointer to HTTP Object
+ *     - this:      acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
+ *    
+ * Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ * 
+ *******************************************************************************/
+int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key );
 
 
 #endif /* #ifndef _HTTP_H */

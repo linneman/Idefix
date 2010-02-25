@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdbool.h>
 #include "http.h"
 #include "socket_io.h"
 
@@ -90,38 +91,6 @@ static const HTTP_HASH_TYPE HttpAckTable[] =
   { 404, "Not Found" },
   { 500, "Internal Server Error" },
 };
-
-typedef enum {
-  HTTP_ACK_OK,                /* 200 OK */
-  HTTP_ACK_NOT_FOUND,         /* 404 Not Found */
-  HTTP_ACK_INTERNAL_ERROR     /* 500 Internal Server Error */
-} HTTP_ACK_KEY;
-
-
-
-/*
- *  HTTP mime types
- */
-
-typedef enum {
-  HTTP_MIME_UNDEFINED,
-  HTTP_MIME_TEXT_HTML,
-  HTTP_MIME_TEXT_CSS,
-  HTTP_MIME_TEXT_PLAIN,
-  HTTP_MIME_IMAGE_JPEG,
-  HTTP_MIME_IMAGE_PNG,
-  HTTP_MIME_IMAGE_GIF,
-  HTTP_MIME_IMAGE_TIFF,
-  HTTP_MIME_APPLICATION_JAVASCRIPT,
-  HTTP_MIME_APPLICATION_JSON,
-  HTTP_MIME_APPLICATION_XML,
-  HTTP_MIME_APPLICATION_INDEX,
-  HTTP_MIME_AUDIO_MP4,
-  HTTP_MIME_AUDIO_MPEG,
-  HTTP_MIME_AUDIO_SPEEX,
-  HTTP_MIME_MULTIPART_FORM_DATA,
-  HTTP_MIME_MULTIPART_ALTERNATIVE,
-} HTTP_MIME_TYPE;
 
 
 /*
@@ -319,7 +288,6 @@ static int _http_search_path_index_from_url( char url[HTML_MAX_URL_SIZE] )
  */
 static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_type, const long content_len, const char* add_ons )
 {
-  
   char    linebuf[HTML_MAX_STATLINE];
   char    ackbuf[HTML_MAX_ACK_BLOCK];
   int     i = 0, len, error = 0;
@@ -412,7 +380,9 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
     if( HTTP_SOCKET_SEND( socket, ackbuf, i, 0 ) < 0 )
       error = -2;
     
-    fwrite( ackbuf, 1, i, stdout ); 
+    printf( "-------- HTTP ANSWER HEADER ------->\n");
+    fwrite( ackbuf, 1, i, stdout );
+    printf( "\n<------- HTTP ANSWER HEADER --------\n");
   }
   
   return error;
@@ -420,11 +390,9 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
 
 
 /*
- *  Invokes CGI handler and returns handler ID if match was found, otherwise -1
- *
- *  handler_return_code - pointer to int variable for storing handler's return code
+ *  find CGI handler and returns handler ID if match was found, otherwise -1
  */
-int _call_cgi_handler( HTTP_OBJ* this, int* handler_return_code )
+static int _find_cgi_handler( HTTP_OBJ* this )
 {
   HTTP_CGI_HASH*    cgi_handler_tab     = this->cgi_handler_tab;
   const int         cgi_handler_tab_top = this->cgi_handler_tab_top;
@@ -447,13 +415,42 @@ int _call_cgi_handler( HTTP_OBJ* this, int* handler_return_code )
     if( found && ( this->method_id & cgi_handler_tab[i].method_id_mask ) )
     {
       handler_id = cgi_handler_tab[i].handler_id;
-      *handler_return_code = (*cgi_handler_tab[i].handler)( this );
       break;
     }
   }
   
   return handler_id;
 }
+
+
+/*
+ *  Invokes CGI handler of given ID and returns handlers error code
+ */
+static int _call_cgi_handler( HTTP_OBJ* this, int handler_id )
+{
+  HTTP_CGI_HASH*    cgi_handler_tab     = this->cgi_handler_tab;
+  const int         cgi_handler_tab_top = this->cgi_handler_tab_top;
+  int               i, error;
+    
+  for( i=0; i < cgi_handler_tab_top; ++i )
+  {
+    if( handler_id == cgi_handler_tab[i].handler_id )
+      break;    
+  }
+  
+  if( i != cgi_handler_tab_top )
+  {
+    error = (*cgi_handler_tab[i].handler)( this );
+  }
+  else 
+  {
+    /* handler id does not exist */
+    error = -1;
+  }
+
+  return error;
+}
+
 
 
 /*!
@@ -478,11 +475,10 @@ static int http_parse_header( HTTP_OBJ* this )
     
     
   /* allocate temporary used memory  */
-  
   this->url_path      = url_path    = OBJ_STACK_ALLOC( HTML_MAX_PATH_LEN );
   this->search_path   = search_path = OBJ_STACK_ALLOC( HTML_MAX_URL_SIZE );
   this->frl           = frl         = OBJ_STACK_ALLOC( frl_size );
-  if( this->search_path == NULL )
+  if( this->frl == NULL )
     return -1;
   
   
@@ -496,18 +492,19 @@ static int http_parse_header( HTTP_OBJ* this )
   url_path[path_sep_idx] = '\0';
   
   /* extract search path */
-  for( i=path_sep_idx+1, j=0; frl[i] !='\0' && j < HTML_MAX_URL_SIZE; ++i, j++ )
-    search_path[j] = frl[i];
-  
+  j=0;
+  if( frl[path_sep_idx] == '?' )
+  {
+    for( i=path_sep_idx+1; frl[i] !='\0' && j < HTML_MAX_URL_SIZE; ++i, j++ )
+      search_path[j] = frl[i];
+  }
   search_path[j]='\0';
-  
-  
+
   this->mimetyp = _http_get_mime_type_from_filename( url_path );
   
   printf( "URL-PATH: %s\n", url_path );
   printf( "MIME-TYPE: %s\n", HttpMimeTypeTable[this->mimetyp].txt );
   printf( "SEARCH-PATH: %s\n", search_path );
-  printf( "---- HTTP ANSWER ------>\n");
   
   /* concatenate resource file name */
   strcpy( frl, HTML_ROOT_DIR );
@@ -519,60 +516,25 @@ static int http_parse_header( HTTP_OBJ* this )
 
 
 /*!
- *  Implementation of header generation
- *  
- *  determines resource size and writes appropriate header to socket
- *
- *  in case this->frl != NULL, the content_len is determined from
- *  the given file
+ *  Determine length of static content
  */
-static int _http_head( HTTP_OBJ* this )
+static void _http_set_content_length_to_file_len( HTTP_OBJ* this )
 {
-  FILE*           fp;
-  char*           p_ack_add_on_str;
-  int             error = 0, error2;
-      
+  FILE* fp;
+
   if( this->frl != NULL )
   {
     /* generate server response, open requested resource */
     fp = fopen( this->frl, "r" );
-    if( fp == NULL )
+    if( fp != NULL )
     {
-      _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
-      return -4;
+      /* compute the file size of the requested resource and generate ack */
+      fseek( fp, 0, SEEK_END );
+      this->content_len = ftell( fp );
+      fseek( fp, 0, SEEK_SET );
+      fclose( fp );
     }
-    
-    /* compute the file size of the requested resource and generate ack */
-    fseek( fp, 0, SEEK_END );
-    this->content_len = ftell( fp );
-    fseek( fp, 0, SEEK_SET );
-    fclose( fp );
   }
-  
-  /* determine whether we put the string "Conneciton:close\n" in the ack message ( only in case for html pages ) */
-  if( this->mimetyp == HTTP_MIME_TEXT_HTML )
-  {
-    /* in case of html we indicate connection close by positive result code */
-    error = 1;
-    p_ack_add_on_str = "Connection: close\n";
-  }
-  else 
-  {
-    p_ack_add_on_str = NULL;
-  }
-  
-  /* send the ack message */
-  error2 = _http_ack( this->socket, HTTP_ACK_OK, HttpMimeTypeTable[this->mimetyp].txt, this->content_len, p_ack_add_on_str );
-  if( error2 )
-  {
-    return error2;
-  }
-  
-  /* write header/content separation line */
-  if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
-    error = -1;
-    
-  return error;
 }
 
 
@@ -581,7 +543,8 @@ static int _http_head( HTTP_OBJ* this )
  */
 static int http_head( HTTP_OBJ* this )
 {
-  int error;
+  int             error = 0;
+  int             handler_id;
   
   printf("received HEAD command: %s\n", this->rcvbuf );
 
@@ -591,9 +554,29 @@ static int http_head( HTTP_OBJ* this )
   {
     return error;
   }
-
-
-  return _http_head( this );
+    
+  /* check whether CGI handler exists */
+  if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
+  {
+    /* but do not invoke for head method */
+  }
+  else
+  {
+    /* otherwise check for static content (html, javascript, jpeg, etc) */
+    
+    /* set content length in http header and always request disconnection */
+    _http_set_content_length_to_file_len( this );
+    this->disconnect = true;
+    
+    /* generate header */
+    error = HTTP_SendHeader( this, HTTP_ACK_OK );
+    if( error < 0 )
+    {
+      return error;
+    }
+  }
+  
+  return error;
 }
 
 
@@ -606,7 +589,7 @@ static int http_get( HTTP_OBJ* this )
   char            buf[HTML_CHUNK_SIZE];
   int             bytes_read, bytes_written;
   int             error = 0;
-  int             handler_return_code;
+  int             handler_id;
   
   printf("received GET command: %s\n", this->rcvbuf );
 
@@ -617,22 +600,32 @@ static int http_get( HTTP_OBJ* this )
     return error;
   }
     
-  if( _call_cgi_handler( this, & handler_return_code ) >= 0 )
+  /* check whether CGI handler exists */
+  if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
   {
-    /* if cgi handler was found, do nothing but indicate to disconnect stream */
-    error = 1;
+    /* and if so invoke it */
+    error = _call_cgi_handler( this, handler_id );
   }
   else 
   {
     /* otherwise deliver static content (html, javascript, jpeg, etc) */
-  
+    
+    /* set content length in http header */
+    _http_set_content_length_to_file_len( this );
+    
+    /* connection has to be closed after static html content is delivered */
+    if( this->mimetyp == HTTP_MIME_TEXT_HTML )
+    {
+      this->disconnect = true;
+    }
+    
     /* generate header */
-    error = _http_head( this );
+    error = HTTP_SendHeader( this, HTTP_ACK_OK );
     if( error < 0 )
     {
       return error;
     }
-  
+
     /* open and copy static content from file system */
     fp = fopen( this->frl, "r" );
     if( fp == NULL )
@@ -648,8 +641,6 @@ static int http_get( HTTP_OBJ* this )
       // fwrite( buf, 1, bytes_read, stdout ); 
     } while( bytes_read > 0  &&  bytes_written == bytes_read );
     
-    printf("\n");
-    
     fclose( fp );
   }
   
@@ -662,11 +653,10 @@ static int http_get( HTTP_OBJ* this )
  */
 static int http_post( HTTP_OBJ* this )
 {
-  int         handler_return_code;
+  int         handler_id;
   int         error = 0;
    
   printf("received POST command: %s\n", this->rcvbuf );
-  printf("->: \n%s\n", this->rcvbuf );
 
   /* retrieve url_path, search_path and frl (file resouce location) */
   error = http_parse_header( this );
@@ -675,15 +665,15 @@ static int http_post( HTTP_OBJ* this )
     return error;
   }
 
-  /* invoke CGI handler */ 
-  if( _call_cgi_handler( this, & handler_return_code ) >= 0 )
+  /* check whether CGI handler exists */
+  if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
   {
-    /* if cgi handler was found, do nothing but indicate to disconnect stream */
-    error = 1;
+    /* and if so invoke it */
+    error = _call_cgi_handler( this, handler_id );
   }
   else 
   {
-    /* generate page not found error */
+    /* when no handler exists generate page not found error */
     _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
     error = -1;
   }
@@ -810,6 +800,15 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
 {
   int retcode = 0;
   
+  /* reset internal states first */
+  this->content_len = 0;
+  this->mimetyp = HTTP_MIME_UNDEFINED;
+  this->url_path      = NULL;
+  this->search_path   = NULL;
+  this->frl           = NULL;
+  this->disconnect    = false;
+  
+  /* invoke HTTP method handler */
   if( strncmp( this->rcvbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
   {
     this->method_id = HTTP_GET_ID;
@@ -910,3 +909,47 @@ int HTTP_AddCgiHanlder(
   
   return 0;
 }
+
+
+/*******************************************************************************
+ * HTTP_SendHeader() 
+ *                                                                         */ /*!
+ * Sends HTTP Header of given HTTP Object 
+ *                                                                              
+ * Function parameters
+ *     - this:      pointer to HTTP Object
+ *     - this:      acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
+ *    
+ * Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ * 
+ *******************************************************************************/
+int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
+{
+  const char*     p_ack_add_on_str;
+  int             error = 0;
+  
+  /* determine whether we put the string "Conneciton:close\n" in the ack message ( mostly the case for html pages ) */
+  if( this->disconnect )
+  {
+    p_ack_add_on_str = "Connection: close\n";
+  }
+  else 
+  {
+    p_ack_add_on_str = NULL;
+  }
+  
+  /* send the ack message */
+  error = _http_ack( this->socket, ack_key, HttpMimeTypeTable[this->mimetyp].txt, this->content_len, p_ack_add_on_str );
+  if( error )
+  {
+    return error;
+  }
+  
+  /* write header/content separation line */
+  if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
+    error = -1;
+    
+  return error;
+}
+

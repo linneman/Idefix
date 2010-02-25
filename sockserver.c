@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <signal.h>
 
 #include "http.h"
 #include "socket_io.h"
@@ -51,21 +52,21 @@ int service_socket_loop(void)
   const int           y = 1;
   int                 error;
   
+  signal( SIGPIPE, SIG_IGN );
+  
   if( ( error = HTTP_ObjInit( this, HTML_SERVER_NAME ) ) != 0 )
   {
     fprintf( stderr, "Could not create buffer error!\n" );
     return error;
   }
 
-#if 1
   if( ( error = RegisterCgiHandlers( this ) ) != 0 )
   {
     fprintf( stderr, "Could not register CGI handlers!\n" );
     return error;    
   }
-#endif 
 
-  printf("Server Started ...");
+  printf("Server Started\n");
   if ((create_socket = socket (AF_INET, SOCK_STREAM, 0)) > 0)
   {
     printf ( "Socket successfully created\n" );
@@ -96,13 +97,14 @@ int service_socket_loop(void)
   
   while (1) 
   {
+    printf("Waiting for client connections ...\n");
     new_socket = accept ( create_socket,
                          (struct sockaddr *) &address,
                          &addrlen );
     
     if (new_socket > 0)
     {
-      printf ("Client (%s) is connected ...\n",
+      printf ("Client (%s) is connected!\n",
               inet_ntoa (address.sin_addr));
     
       this->socket = new_socket;
@@ -110,35 +112,22 @@ int service_socket_loop(void)
       {
         /* Remember stack frame for later restauration */
         OBJ_ALLOC_STACK_FRAME( this );
-
       
         size = HTTP_SOCKET_RECV( new_socket, this->rcvbuf, MAX_HTML_BUF_LEN - 1, 0 );
         if( size > 0 )
           this->rcvbuf[size] = '\0';
-        
-        printf( "received http request!\n");
-        // printf( "data sent by client: %s\n", this->rcvbuf );
-        
+                
         error = HTTP_ProcessRequest( this );
         if( error < 0 )
         {
-          fprintf( stderr, "error while rocessing of http request occured!\n");
+          fprintf( stderr, "Error while rocessing of http request occured!\n");
         }
-        
-        
-        /*
-        printf( "Message to send: " );
-        fgets( buffer, MAX_HTML_BUF_LEN, stdin );
-        send( new_socket, buffer, strlen (buffer), 0 );
-        // flush( new_socket );
-        */ 
-        
         
         /* Check object's memory and release stack frame */
         OBJ_CHECK( this );
         OBJ_RELEASE_STACK_FRAME( this );
          
-      } while( ! error );
+      } while( !error && !this->disconnect );
       
       close (new_socket);
       }
