@@ -24,6 +24,7 @@
  */
 int TestCgiHandler( struct _HTTP_OBJ* this )
 {
+  int   error;
   char  content[1024]; 
   
   this->mimetyp = HTTP_MIME_TEXT_HTML;
@@ -39,12 +40,20 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
     "<p>*******************************************************************************\n\n" 
     "</body></html>\n",
     this->method_id, this->url_path, this->search_path
-    ) ;
+    );
   
-  HTTP_SendHeader( this, HTTP_ACK_OK );
-  HTTP_SOCKET_SEND( this->socket, content, strlen( content ), 0 );
-    
-  return 0;
+  error = HTTP_SendHeader( this, HTTP_ACK_OK );
+  if( error == HTTP_OK )
+  {
+    error = HTTP_SOCKET_SEND( this->socket, content, strlen( content ), 0 );
+  }
+  
+  if( error != HTTP_OK )
+  {
+    error = HTTP_CGI_EXEC_ERROR;
+  }
+  
+  return error;
 }
 
 

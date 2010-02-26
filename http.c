@@ -14,6 +14,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <sys/stat.h>   /* for checking correct file status */
 #include "http.h"
 #include "socket_io.h"
 
@@ -22,35 +23,41 @@
 /* -- const definitions -----------------------------------------------------------*/
 
 
+/*! 
+ *  Current server version in MMmmbb hex format (major.minor.build)
+ */
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 0 << 8 ) | ( 5 ) )
+
+
 /*!
  *  The maximum allowed number of characters in an URL
  */
-#define HTML_MAX_URL_SIZE   256
+#define HTML_MAX_URL_SIZE     256
 
 
 /*!
  *  The maximum length of of an absolute path name
  */
-#define HTML_MAX_PATH_LEN   256
+#define HTML_MAX_PATH_LEN     256
 
 
 /*!
  *  Chunksize used for HTML file operations
  */
-#define HTML_CHUNK_SIZE     512
+#define HTML_CHUNK_SIZE       512
 
 
 /*!
  *  Maximum length of server acknowledge block
  */
-#define HTML_MAX_ACK_BLOCK  512
+#define HTML_MAX_ACK_BLOCK    512
 
 
 /*!
  *  Number of maximum bytes a status line of
  *  a server answer can have
  */
-#define HTML_MAX_STATLINE   80
+#define HTML_MAX_STATLINE     80
 
 
 
@@ -76,10 +83,33 @@
 /*
  *  General Hash Type, mapping from ID to textual representation
  */
-typedef struct {
+typedef struct 
+{
   const int     id;
   const char*   txt;
 } HTTP_HASH_TYPE;
+
+
+/*!
+ *  Server error text messages
+ */
+static const HTTP_HASH_TYPE _httpErrorTab[] =
+{
+  { HTTP_OK, "ok" },
+  { HTTP_HEAP_OVERFLOW, "could not allocate bytes from object's heap" },
+  { HTTP_STACK_OVERFLOW, "could not allocate bytes from object's stack" },
+  { HTTP_BUFFER_OVERRUN, "internal buffer overrun" },
+  { HTTP_MALFORMED_URL, "malformed URL transfered" },
+  { HTTP_SEND_ERROR, "send error" },
+  { HTTP_WRONG_METHOD, "http method does not exist" },
+  { HTTP_CGI_HANLDER_NOT_FOUND, "wrong CGI handler invoked (IMPLEMENTATION BUG)" },
+  { HTTP_CGI_EXEC_ERROR, "error occured within cgi execution" },
+  { HTTP_TOO_MANY_CGI_HANDLERS, "to many cgi handlers registered" },
+  { HTTP_FILE_NOT_FOUND, "static content file like html, jpeg not found" },
+  { HTTP_NOT_IMPLEMENTED_YET, "http method of other feature not implmented yet" }
+};
+
+const int _httpErrorTabSize = sizeof( _httpErrorTab ) / sizeof( HTTP_HASH_TYPE );
 
 
 /*
@@ -212,7 +242,7 @@ static int _http_get_url_from_request( char url[HTML_MAX_URL_SIZE], char *pbuf )
   int   beg = 0, end;
   int   i, j;
   
-  /* find the position of the first blank separing the URL command from the URL */
+  /* find the position of the first blank separing the http command from the URL */
   while( beg < MAX_HTTP_COMMAND_LEN && pbuf[beg] != ' ' )
     ++beg;
   
@@ -230,7 +260,7 @@ static int _http_get_url_from_request( char url[HTML_MAX_URL_SIZE], char *pbuf )
     ;
   
   if( i==end )
-    return -2;
+    return HTTP_MALFORMED_URL;
   else 
     end = i;
   
@@ -246,10 +276,7 @@ static int _http_get_url_from_request( char url[HTML_MAX_URL_SIZE], char *pbuf )
     else 
       break;
   }
-  
-  if( beg == end )
-    return -3;
-  
+    
   for( i=beg, j=0;  i<end;  ++i)
   {
     c = pbuf[i];
@@ -262,7 +289,7 @@ static int _http_get_url_from_request( char url[HTML_MAX_URL_SIZE], char *pbuf )
   
   /* line termination */
   url[j++] = '\0';
-  return 0;
+  return HTTP_OK;
 }
 
 
@@ -290,7 +317,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
 {
   char    linebuf[HTML_MAX_STATLINE];
   char    ackbuf[HTML_MAX_ACK_BLOCK];
-  int     i = 0, len, error = 0;
+  int     i = 0, len, error = HTTP_OK;
   
   ackbuf[0] = '\0';
   
@@ -302,7 +329,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       len = strlen( linebuf );
       if( i+len >= HTML_MAX_ACK_BLOCK )
       {
-        error = -1;
+        error = HTTP_BUFFER_OVERRUN;
         break;
       }
       strcat( & ackbuf[i], linebuf );
@@ -313,7 +340,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       len = strlen( linebuf );
       if( i+len >= HTML_MAX_ACK_BLOCK )
       {
-        error = -1;
+        error = HTTP_BUFFER_OVERRUN;
         break;
       }
       strcat( & ackbuf[i], linebuf );
@@ -327,7 +354,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
-          error = -1;
+          error = HTTP_BUFFER_OVERRUN;
           break;
         }
         strcat( & ackbuf[i], linebuf );
@@ -341,7 +368,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
-          error = -1;
+          error = HTTP_BUFFER_OVERRUN;
           break;
         }
         strcat( & ackbuf[i], linebuf );
@@ -355,7 +382,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
-          error = -1;
+          error = HTTP_BUFFER_OVERRUN;
           break;
         }
         strcat( & ackbuf[i], linebuf );
@@ -378,7 +405,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
   else 
   {
     if( HTTP_SOCKET_SEND( socket, ackbuf, i, 0 ) < 0 )
-      error = -2;
+      error = HTTP_SEND_ERROR;
     
     printf( "-------- HTTP ANSWER HEADER ------->\n");
     fwrite( ackbuf, 1, i, stdout );
@@ -445,7 +472,7 @@ static int _call_cgi_handler( HTTP_OBJ* this, int handler_id )
   else 
   {
     /* handler id does not exist */
-    error = -1;
+    error = HTTP_CGI_HANLDER_NOT_FOUND;
   }
 
   return error;
@@ -479,12 +506,16 @@ static int http_parse_header( HTTP_OBJ* this )
   this->search_path   = search_path = OBJ_STACK_ALLOC( HTML_MAX_URL_SIZE );
   this->frl           = frl         = OBJ_STACK_ALLOC( frl_size );
   if( this->frl == NULL )
-    return -1;
+    return HTTP_STACK_OVERFLOW;
   
-  
+  /* get url */
   error = _http_get_url_from_request( frl, this->rcvbuf );
   if( error != 0 )
     return error;
+  
+  /* in case its empty use default URL */
+  if( strlen( frl) == 0 )
+    strcpy( frl, HTTP_DEFAULT_URL_PATH );
   
   /* extract url path */
   path_sep_idx = _http_search_path_index_from_url( frl );
@@ -507,11 +538,11 @@ static int http_parse_header( HTTP_OBJ* this )
   printf( "SEARCH-PATH: %s\n", search_path );
   
   /* concatenate resource file name */
-  strcpy( frl, HTML_ROOT_DIR );
-  strncat( frl, url_path, frl_size - strlen( HTML_ROOT_DIR ) );
+  strcpy( frl, this->ht_root_dir );
+  strncat( frl, url_path, frl_size - strlen( this->ht_root_dir ) );
   frl[frl_size-1]='\0';
     
-  return 0;
+  return HTTP_OK;
 }
 
 
@@ -545,6 +576,7 @@ static int http_head( HTTP_OBJ* this )
 {
   int             error = 0;
   int             handler_id;
+  struct stat     file_stat;
   
   printf("received HEAD command: %s\n", this->rcvbuf );
 
@@ -563,7 +595,17 @@ static int http_head( HTTP_OBJ* this )
   else
   {
     /* otherwise check for static content (html, javascript, jpeg, etc) */
-    
+ 
+    /* check for correct file status ( must be ordinary file, no directory ) */
+    error = stat( this->frl, & file_stat );
+    if( !error )
+    {
+      if( !( file_stat.st_mode & S_IFREG ) )
+      {
+        return HTTP_FILE_NOT_FOUND;
+      }
+    }    
+          
     /* set content length in http header and always request disconnection */
     _http_set_content_length_to_file_len( this );
     this->disconnect = true;
@@ -590,6 +632,7 @@ static int http_get( HTTP_OBJ* this )
   int             bytes_read, bytes_written;
   int             error = 0;
   int             handler_id;
+  struct stat     file_stat;
   
   printf("received GET command: %s\n", this->rcvbuf );
 
@@ -609,6 +652,16 @@ static int http_get( HTTP_OBJ* this )
   else 
   {
     /* otherwise deliver static content (html, javascript, jpeg, etc) */
+    
+    /* check for correct file status ( must be ordinary file, no directory ) */
+    error = stat( this->frl, & file_stat );
+    if( !error )
+    {
+      if( !( file_stat.st_mode & S_IFREG ) )
+      {
+        return HTTP_FILE_NOT_FOUND;
+      }
+    }
     
     /* set content length in http header */
     _http_set_content_length_to_file_len( this );
@@ -631,14 +684,13 @@ static int http_get( HTTP_OBJ* this )
     if( fp == NULL )
     {
       _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
-      return -5;
+      return HTTP_FILE_NOT_FOUND;
     }
     
     /* read file blockwise and send it to the server */
     do {
       bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
       bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
-      // fwrite( buf, 1, bytes_read, stdout ); 
     } while( bytes_read > 0  &&  bytes_written == bytes_read );
     
     fclose( fp );
@@ -675,7 +727,7 @@ static int http_post( HTTP_OBJ* this )
   {
     /* when no handler exists generate page not found error */
     _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
-    error = -1;
+    error = HTTP_CGI_HANLDER_NOT_FOUND;
   }
 
   return error;
@@ -690,7 +742,7 @@ static int http_put( HTTP_OBJ* this )
   /*
    *  not implemented yet
    */
-  return -1;
+  return HTTP_NOT_IMPLEMENTED_YET;
 }
 
 /*!
@@ -701,7 +753,7 @@ static int http_delete( HTTP_OBJ* this )
   /*
    *  not implemented yet
    */
-  return -1;
+  return HTTP_NOT_IMPLEMENTED_YET;
 }
 
 /*!
@@ -712,7 +764,7 @@ static int http_trace( HTTP_OBJ* this )
   /*
    *  not implemented yet
    */
-  return -1;
+  return HTTP_NOT_IMPLEMENTED_YET;
 }
 
 /*!
@@ -723,7 +775,7 @@ static int http_options( HTTP_OBJ* this )
   /*
    *  not implemented yet
    */
-  return -1;
+  return HTTP_NOT_IMPLEMENTED_YET;
 }
 
 /*!
@@ -734,7 +786,7 @@ static int http_connect( HTTP_OBJ* this )
   /*
    *  not implemented yet
    */
-  return -1;
+  return HTTP_NOT_IMPLEMENTED_YET;
 }
 
 
@@ -751,15 +803,24 @@ static int http_connect( HTTP_OBJ* this )
  * request.
  *                                                                              
  * Function parameters
+ *     - this:        pointer to HTTP object
  *     - server_name: server name
- *     - rcvbuf:      pointer to buffer of size MAX_HTML_BUF_LEN
+ *     - ht_root_dir: root directory for static web content 
+ *     - port:        port the server is listening to
  *
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
  * 
  *******************************************************************************/
-int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
+int HTTP_ObjInit( 
+  HTTP_OBJ*   this, 
+  const char* server_name, 
+  const char* ht_root_dir,
+  const int   port
+)
 {
+  int len;
+
   /* Initialize object internals */
   memset( this, 0, sizeof( HTTP_OBJ ) );
   OBJ_INIT( this );
@@ -767,17 +828,28 @@ int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
   /* initialize components */
   this->server_name = OBJ_HEAP_ALLOC( strlen( server_name ) + 1 );
   if( this->server_name == NULL )
-    return -1;
+    return HTTP_HEAP_OVERFLOW;
 
   strcpy( this->server_name, server_name ); 
   this->socket = -1;
 
+  /* 2: in case of trailing '/' and '\0' */
+  this->ht_root_dir = OBJ_HEAP_ALLOC( ( len = strlen( ht_root_dir ) ) + 2 ); 
+  if( this->ht_root_dir == NULL )
+    return HTTP_HEAP_OVERFLOW;
+  
+  strcpy( this->ht_root_dir, ht_root_dir );
+  if( this->ht_root_dir[len-1] != '/' )
+    strcpy( & this->ht_root_dir[len], "/" );
+  
+  this->port = port;
+
   this->rcvbuf = OBJ_HEAP_ALLOC( MAX_HTML_BUF_LEN );
   if( this->rcvbuf == NULL )
-    return -1;
+    return HTTP_HEAP_OVERFLOW;
+    
   
-  
-  return 0;
+  return HTTP_OK;
 }
 
 
@@ -798,7 +870,7 @@ int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name )
  *******************************************************************************/
 int HTTP_ProcessRequest( HTTP_OBJ* this )
 {
-  int retcode = 0;
+  int retcode = HTTP_OK;
   
   /* reset internal states first */
   this->content_len = 0;
@@ -851,7 +923,7 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
   }  
   else 
   {
-    retcode = -1;
+    retcode = HTTP_WRONG_METHOD;
   }
   
   return( retcode );
@@ -893,7 +965,7 @@ int HTTP_AddCgiHanlder(
 
   /* check for handler table overflow */
   if( ! ( handler_id < HTTP_MAX_CGI_HANDLERS ) )
-    return -1;
+    return HTTP_TOO_MANY_CGI_HANDLERS;
     
   /* insert handler into http object */
   hashPtr = & this->cgi_handler_tab[handler_id];
@@ -907,7 +979,7 @@ int HTTP_AddCgiHanlder(
   /* sort handler table from most to least specific URL paths */
   qsort( this->cgi_handler_tab, this->cgi_handler_tab_top, sizeof( HTTP_CGI_HASH ), _cgi_hash_comp );
   
-  return 0;
+  return HTTP_OK;
 }
 
 
@@ -918,7 +990,7 @@ int HTTP_AddCgiHanlder(
  *                                                                              
  * Function parameters
  *     - this:      pointer to HTTP Object
- *     - this:      acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
+ *     - ack_key:   acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
  *    
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
@@ -927,7 +999,7 @@ int HTTP_AddCgiHanlder(
 int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
 {
   const char*     p_ack_add_on_str;
-  int             error = 0;
+  int             error = HTTP_OK;
   
   /* determine whether we put the string "Conneciton:close\n" in the ack message ( mostly the case for html pages ) */
   if( this->disconnect )
@@ -948,8 +1020,50 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   
   /* write header/content separation line */
   if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
-    error = -1;
+    error = HTTP_SEND_ERROR;
     
   return error;
 }
+
+
+/*******************************************************************************
+ * HTTP_GetErrorMsg() 
+ *                                                                         */ /*!
+ * retrieve pointer to constant string with error message 
+ *                                                                              
+ * Function parameters
+ *     - error:     error code
+ *    
+ * Returnparameter
+ *     - R:         pointer to ASCII error text representation
+ * 
+ *******************************************************************************/
+const char* HTTP_GetErrorMsg( int error )
+{
+  int i;
+ 
+  for( i=0; i < _httpErrorTabSize; ++ i )
+  {
+    if( _httpErrorTab[i].id == error )
+      return _httpErrorTab[i].txt;
+  }
+   
+  return "undefined error code";
+}
+
+
+/*******************************************************************************
+ * HTTP_GetServerVersion() 
+ *                                                                         */ /*!
+ * retrieve current server version
+ *                                                                              
+ * Returnparameter
+ *     - R:         server version in MMmmbb hex format (major.minor.build) 
+ * 
+ *******************************************************************************/
+long HTTP_GetServerVersion( void )
+{
+  return HTTP_SERVER_VERSION;
+}
+
 

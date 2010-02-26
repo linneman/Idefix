@@ -18,7 +18,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include <signal.h>
 
 #include "http.h"
 #include "socket_io.h"
@@ -34,13 +33,14 @@
  * Reads incoming HTTP requests from socket, and reacts appropriately
  *
  * Function parameters
- *     - currently none
+ *     - ht_root_dir: root directory for static web content 
+ *     - port:        port the server is listening to
  *
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
  * 
  *******************************************************************************/
-int service_socket_loop(void) 
+int service_socket_loop( const char* ht_root_dir, const int port ) 
 {
   HTTP_OBJ            http_obj;           /* HTTP thread's object, we keep it on the stack here */
   HTTP_OBJ*           this = & http_obj;
@@ -52,20 +52,21 @@ int service_socket_loop(void)
   const int           y = 1;
   int                 error;
   
-  signal( SIGPIPE, SIG_IGN );
-  
-  if( ( error = HTTP_ObjInit( this, HTML_SERVER_NAME ) ) != 0 )
+  /* intialize HTTP object */
+  if( ( error = HTTP_ObjInit( this, HTML_SERVER_NAME, ht_root_dir, port ) ) != 0 )
   {
     fprintf( stderr, "Could not create buffer error!\n" );
     return error;
   }
 
+  /* register CGI handlers (cgi.c) */
   if( ( error = RegisterCgiHandlers( this ) ) != 0 )
   {
     fprintf( stderr, "Could not register CGI handlers!\n" );
     return error;    
   }
 
+  /* create socket */ 
   printf("Server Started\n");
   if ((create_socket = socket (AF_INET, SOCK_STREAM, 0)) > 0)
   {
@@ -77,12 +78,12 @@ int service_socket_loop(void)
     return create_socket;
   }
 
-  
+
   setsockopt( create_socket, SOL_SOCKET, SO_REUSEADDR, &y, sizeof(int));
   
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons ( HTML_SERVER_PORT );
+  address.sin_port = htons ( this->port );
   
   if ( bind( create_socket,
             (struct sockaddr *) &address,
@@ -120,7 +121,10 @@ int service_socket_loop(void)
         error = HTTP_ProcessRequest( this );
         if( error < 0 )
         {
-          fprintf( stderr, "Error while rocessing of http request occured!\n");
+          fprintf( stderr, 
+            "Error while rocessing of http request occured:\n\t%s!\n",
+            HTTP_GetErrorMsg(error) 
+            );
         }
         
         /* Check object's memory and release stack frame */

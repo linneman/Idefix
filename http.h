@@ -18,55 +18,63 @@
 
 
 /*!
- *  The port where the HTML server is listen to
- */
-#define HTML_SERVER_PORT    3000
-
-
-/*!
  *  Server's indication in response texts
  */
-#define HTML_SERVER_NAME    "Compact HTTP Server"
+#define HTML_SERVER_NAME            "Compact HTTP Server"
 
 
 /*!
- *  This base directory of all HTML pages
+ *  Default URL in case nothing is specified from client
  */
-#define HTML_ROOT_DIR       "./"
-
+#define HTTP_DEFAULT_URL_PATH       "index.html"
 
 
 /*!
  *  Maximum size of the received HTML commands ( for POST it can be big! )
  */
-#define MAX_HTML_BUF_LEN    10000
-
+#define MAX_HTML_BUF_LEN            10000
 
 
 /*!
  *  Maximum size of memory consumed from one server instance
  */
-#define HTTP_OBJ_SIZE       ( MAX_HTML_BUF_LEN + 2000 )
+#define HTTP_OBJ_SIZE               ( MAX_HTML_BUF_LEN + 2000 )
 
 
 /*!
  *  Maximum allowed CGI handlers
  */
-#define HTTP_MAX_CGI_HANDLERS   20
+#define HTTP_MAX_CGI_HANDLERS       20
 
 
 /*!
  *  HTTP method ID's
  */
-#define HTTP_GET_ID           0x01
-#define HTTP_POST_ID          0x02
-#define HTTP_HEAD_ID          0x04
-#define HTTP_PUT_ID           0x08
-#define HTTP_DELETE_ID        0x10
-#define HTTP_TRACE_ID         0x20
-#define HTTP_OPTIONS_ID       0x40
-#define HTTP_CONNECT_ID       0x80
+#define HTTP_GET_ID                 0x01
+#define HTTP_POST_ID                0x02
+#define HTTP_HEAD_ID                0x04
+#define HTTP_PUT_ID                 0x08
+#define HTTP_DELETE_ID              0x10
+#define HTTP_TRACE_ID               0x20
+#define HTTP_OPTIONS_ID             0x40
+#define HTTP_CONNECT_ID             0x80
  
+/*!
+ *  Servers internal error codes
+ */
+#define HTTP_OK                     (   0 )
+#define HTTP_HEAP_OVERFLOW          (  -1 )   /* could not allocate bytes from object's heap */
+#define HTTP_STACK_OVERFLOW         (  -2 )   /* could not allocate bytes from object's stack */
+#define HTTP_BUFFER_OVERRUN         (  -3 )   /* in example for given URL */
+#define HTTP_MALFORMED_URL          (  -4 )   /* comprehensive URL check failed */
+#define HTTP_SEND_ERROR             (  -5 )   /* in example due to sigpipe */
+#define HTTP_WRONG_METHOD           (  -6 )   /* http method does not exist */
+#define HTTP_CGI_HANLDER_NOT_FOUND  (  -7 )   /* implementation bug if happens */
+#define HTTP_CGI_EXEC_ERROR         (  -8 )   /* error occured within cgi execution */
+#define HTTP_TOO_MANY_CGI_HANDLERS  (  -9 )   /* only HTTP_MAX_CGI_HANDLERS allowed */
+#define HTTP_FILE_NOT_FOUND         ( -10 )   /* static content file like html, jpeg not found */
+#define HTTP_NOT_IMPLEMENTED_YET    ( -11 )   /* http method of other feature not implmented yet */
+
 
 /*!
  *  HTTP mime types
@@ -96,13 +104,13 @@ typedef enum {
  *  HTTP Header status codes
  */
 typedef enum {
-  HTTP_ACK_OK,                /* 200 OK */
-  HTTP_ACK_NOT_FOUND,         /* 404 Not Found */
-  HTTP_ACK_INTERNAL_ERROR     /* 500 Internal Server Error */
+  HTTP_ACK_OK,                      /* 200 OK */
+  HTTP_ACK_NOT_FOUND,               /* 404 Not Found */
+  HTTP_ACK_INTERNAL_ERROR           /* 500 Internal Server Error */
 } HTTP_ACK_KEY;
- 
 
-
+  
+  
 /* -- public types    -----------------------------------------------------------*/
 
 
@@ -141,9 +149,10 @@ typedef struct _HTTP_OBJ
 {
   /* public members */
   char* server_name;    /* name of the http server */
+  int   port;           /* server is listening to port */
   int   socket;         /* file respectively socket descriptor */
   char* rcvbuf;         /* receiving buffer ( header and body ) */
-  
+  char* ht_root_dir;    /* root directory for static web content */
   
   /* private temporary data */
   int   method_id;      /* http method ID */
@@ -188,14 +197,21 @@ typedef struct _HTTP_OBJ
  * request.
  *                                                                              
  * Function parameters
+ *     - this:        pointer to HTTP object
  *     - server_name: server name
- *     - rcvbuf:      pointer to buffer of size MAX_HTML_BUF_LEN
+ *     - ht_root_dir: root directory for static web content 
+ *     - port:        port the server is listening to
  *
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
  * 
  *******************************************************************************/
-int HTTP_ObjInit( HTTP_OBJ* this, const char* server_name );
+int HTTP_ObjInit( 
+  HTTP_OBJ*   this, 
+  const char* server_name, 
+  const char* ht_root_dir,
+  const int   port
+);
 
 
 /*******************************************************************************
@@ -245,13 +261,40 @@ int HTTP_AddCgiHanlder(
  *                                                                              
  * Function parameters
  *     - this:      pointer to HTTP Object
- *     - this:      acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
+ *     - ack_key:   acknowledge code ( HTTP_ACK_OK, HTTP_ACK_NOT_FOUND, HTTP_ACK_INTERNAL_ERROR )
  *    
  * Returnparameter
  *     - R: 0 in case of success, otherwise error code
  * 
  *******************************************************************************/
 int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key );
+
+
+/*******************************************************************************
+ * HTTP_GetErrorMsg() 
+ *                                                                         */ /*!
+ * retrieve pointer to constant string with error message 
+ *                                                                              
+ * Function parameters
+ *     - error:     error code
+ *    
+ * Returnparameter
+ *     - R:         pointer to ASCII error text representation
+ * 
+ *******************************************************************************/
+const char* HTTP_GetErrorMsg( int error );
+
+
+/*******************************************************************************
+ * HTTP_GetServerVersion() 
+ *                                                                         */ /*!
+ * retrieve current server version
+ *                                                                              
+ * Returnparameter
+ *     - R:         server version in MMmmbb hex format (major.minor.build) 
+ * 
+ *******************************************************************************/
+long HTTP_GetServerVersion( void );
 
 
 #endif /* #ifndef _HTTP_H */
