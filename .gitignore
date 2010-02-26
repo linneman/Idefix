@@ -7,10 +7,11 @@
 .DS_Store
 *.d
 build
-./configure
-./config.h
-./config.status
+config.h
+config.status
+config.log
 stamp-h1
 autom4te.cache
 Makefile
 .deps
+src/idefix
