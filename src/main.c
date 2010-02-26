@@ -16,7 +16,7 @@
 #include "sockserver.h"
 #include "http.h"       /* for version information */
 
-#define APP_NAME  "WebGui"
+#define APP_NAME  "idefix"
 
 /*!
  *  The port where the HTML server is listen to

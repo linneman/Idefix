@@ -1,0 +1,13 @@
+Idefix is a very thin webserver for embedded devices. Its main 
+purpose it to deliver content statically where most of the user 
+interface control logic should be implemented on the client side 
+using java script.
+
+The code is implemented in pure ANSI-C and does not necessarily
+require a TCP/IP stack to be installed. If TCP/IP is not 
+available the http traffic can be routed via a serial line by
+byte stuffing ASCII control characteres. The controlling host
+is required to route the serial line to a TCP-listening port
+e.g. by reusing the code snippets in sockserver.c
+
+February 2010, Otto Linnemann
