@@ -141,10 +141,17 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#define _OBJ_MEM_CHK
-
 
 /* === Macros Definitions ================================================ */
+
+
+/*!
+ *  Enable memory check when _DEBUG is defined
+ */
+#ifdef _DEBUG
+  #define _OBJ_MEM_CHK
+#endif
+
 
 /*!
  *  Maximum number of allowed stack frames
@@ -388,11 +395,15 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
 /*!
  *  Complete memory check for given object
  */
-#define OBJ_CHECK( this )    \
-{                            \
-  _CHECK_HEAP( this );       \
-  _CHECK_STACK( this );      \
+#ifdef _OBJ_MEM_CHK
+#define OBJ_CHECK( this )                                             \
+{                                                                     \
+    _CHECK_HEAP( this );                                              \
+    _CHECK_STACK( this );                                             \
 }
+#else
+#define OBJ_CHECK( this )
+#endif
 
 /*!
  *  OBJ_INIT(this)

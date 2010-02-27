@@ -84,7 +84,7 @@ int main( int argc, char* argv[] )
     { "version",  no_argument,        NULL,   'v' },
     { "rootdir",  required_argument,  NULL,   'r' },
     { "port",     required_argument,  NULL,   'p' },
-    NULL
+    { NULL }
   };
 
 

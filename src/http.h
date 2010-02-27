@@ -161,6 +161,8 @@ typedef struct _HTTP_OBJ
   char* frl;            /* absolute path within local file system for given url */
   long  content_len;    /* size of the content within body in bytes */
   int   mimetyp;        /* mime typ */
+  int   keep_alive;     /* is set to 1 when header key Connection: keep-alive given */
+  
   int   disconnect;     /* disconnect request if not zero */
   
   /* cgi handler table, handlers with more specific search paths are served first */

@@ -26,3 +26,4 @@ AC_TYPE_SSIZE_T
 AC_CHECK_FUNCS([inet_ntoa memset socket])
 
 AC_OUTPUT
+

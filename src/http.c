@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 0 << 8 ) | ( 5 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 0 << 8 ) | ( 6 ) )
 
 
 /*!
@@ -181,6 +181,7 @@ static const int HttpFileExtMimeTableSize = sizeof(HttpFileExtMimeTable) / sizeo
 /*
  *  Helper function for determine the mime type in a given string
  */
+#if 0
 static HTTP_MIME_TYPE   _http_get_mime_type_from_string( const char *string )
 {
   int i, index = HTTP_MIME_UNDEFINED;
@@ -194,9 +195,9 @@ static HTTP_MIME_TYPE   _http_get_mime_type_from_string( const char *string )
     }
   }
   
-  return index;
+  return HttpMimeTypeTable[index].id;
 }
-
+#endif
 
 
 /*
@@ -228,9 +229,91 @@ static HTTP_MIME_TYPE   _http_get_mime_type_from_filename( const char *filename 
     }
   }
   
-  return index;  
+  return HttpFileExtMimeTable[index].id;  
 }
 
+
+/*!
+ *  trim string
+ */
+static void _http_trim( char *string, const int max_len )
+{
+  int i, j;
+  
+  /* determine prefix length */
+  for( i=0; i<max_len && string[i]!='\0'; ++i )
+  {
+    if( ! ( string[i] == ' ' || string[i] == '\t' ) )
+      break;
+  }
+  
+  /* remove leading spaces */
+  for( j=0; i<max_len && string[i]!='\0'; ++i, j++ )
+  {
+    string[j] = string[i];
+  }
+  
+  /* determine trailing space including cr, lf */
+  for( --i; i > 0 ; --i )
+  {
+    if( ! ( string[i] == ' ' || string[i] == '\t' || string[i] == '\r'  || string[i] == '\n' ) )
+      break;
+  }
+  
+  /* remove trailing spaces */
+  string[++i] = '\0';
+}
+
+
+/*!
+ *  extract value for given key from http header
+ */
+static int _http_get_value_for_key( 
+  char*       val,
+  const int   max_val_len, 
+  const char* keybuf,
+  const char* pbuf, 
+  const long  max_pbuf_len 
+)
+{
+  int         found = false;
+  const int   keylen = strlen( keybuf );
+  long        i, j;
+  
+  for( i=0; i < max_pbuf_len - max_val_len; ++i )
+  {
+    if( strcmp( & pbuf[i], "\r\n\r\n" ) == 0 )
+      break;  /* end of header */
+  
+    found = true;
+    for( j=0; j<keylen; ++j )
+    {
+      if( toupper( keybuf[j] ) != toupper( pbuf[i+j] ) )
+      {
+        found = false;
+        break;
+      }
+    }
+    
+    if( found && ( pbuf[i+j]==':' ) ) 
+    {
+      strncpy( val, & pbuf[i+j+1], max_val_len );
+      val[max_val_len-1] = '\0';
+      _http_trim( val, max_val_len );
+      break;
+    }
+  }
+
+  if(!found)
+  {
+    val[0]='\0';
+    return false;
+  }
+  else 
+  {
+    return true;
+  }  
+}
 
 
 /*!
@@ -271,7 +354,7 @@ static int _http_get_url_from_request( char url[HTML_MAX_URL_SIZE], char *pbuf )
   {
     c = pbuf[beg];
     
-    if( isdigit( c ) || c=='.' || c=='/' || c=='\\' || c=='*' || c==':' || c==';' || c < 32 || c > 127)
+    if( isdigit( c ) || c=='.' || c=='/' || c=='\\' || c=='*' || c==':' || c==';' || c < 32 || c > 127 )
       ++beg;
     else 
       break;
@@ -325,7 +408,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
   {
     default:  
       /* Status line */
-      snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\n", HttpAckTable[ack_key].id, HttpAckTable[ack_key].txt );
+      snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\r\n", HttpAckTable[ack_key].id, HttpAckTable[ack_key].txt );
       len = strlen( linebuf );
       if( i+len >= HTML_MAX_ACK_BLOCK )
       {
@@ -336,7 +419,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       i += len;
       
       /* Server indication */
-      snprintf(  linebuf, HTML_MAX_STATLINE, "Server: %s\n", HTML_SERVER_NAME );
+      snprintf(  linebuf, HTML_MAX_STATLINE, "Server: %s\r\n", HTML_SERVER_NAME );
       len = strlen( linebuf );
       if( i+len >= HTML_MAX_ACK_BLOCK )
       {
@@ -350,7 +433,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       /* Content length */
       if( content_len >  0 )
       {
-        snprintf(  linebuf, HTML_MAX_STATLINE, "Content-Length: %ld\n", content_len );
+        snprintf(  linebuf, HTML_MAX_STATLINE, "Content-Length: %ld\r\n", content_len );
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
@@ -364,7 +447,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       /* Content Type */
       if( mime_type != NULL )
       {
-        snprintf(  linebuf, HTML_MAX_STATLINE, "Content-Type: %s\n", mime_type );
+        snprintf(  linebuf, HTML_MAX_STATLINE, "Content-Type: %s\r\n", mime_type );
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
@@ -378,7 +461,7 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
       /* Add-Ons */
       if( add_ons != NULL )
       {
-        snprintf(  linebuf, HTML_MAX_STATLINE, "%s\n", add_ons );
+        snprintf(  linebuf, HTML_MAX_STATLINE, "%s\r\n", add_ons );
         len = strlen( linebuf );
         if( i+len >= HTML_MAX_ACK_BLOCK )
         {
@@ -389,16 +472,16 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
         i += len;
       }
       
-      /* Remove trailing CR's */
-      while( ackbuf[i-1] == '\n' && i > 1 )
+      /* Remove trailing CRLF's */
+      while( ( ackbuf[i-1] == '\r' || ackbuf[i-1] == '\n' ) && i > 1 )
         --i;
-      ackbuf[i++] = '\0';
+      ackbuf[i] = '\0';
       break;
   }
   
   if( error )
   {
-    snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\n", HttpAckTable[HTTP_ACK_INTERNAL_ERROR].id, HttpAckTable[HTTP_ACK_INTERNAL_ERROR].txt );
+    snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\r\n", HttpAckTable[HTTP_ACK_INTERNAL_ERROR].id, HttpAckTable[HTTP_ACK_INTERNAL_ERROR].txt );
     len = strlen( linebuf );
     HTTP_SOCKET_SEND( socket, linebuf, len, 0 );
   }
@@ -495,8 +578,9 @@ static int http_parse_header( HTTP_OBJ* this )
   const int       frl_size = HTML_MAX_URL_SIZE + HTML_MAX_PATH_LEN;
   char            *frl;         /* absolute path within local file system for given url */
   char            *url_path;    /* first part of the URL */
-  char            *search_path;  /* search path of the URL (separated by ?) */
-  
+  char            *search_path; /* search path of the URL (separated by ?) */
+  char            value_str[30]; 
+   
   int             path_sep_idx, error;
   int             i, j;
     
@@ -541,7 +625,18 @@ static int http_parse_header( HTTP_OBJ* this )
   strcpy( frl, this->ht_root_dir );
   strncat( frl, url_path, frl_size - strlen( this->ht_root_dir ) );
   frl[frl_size-1]='\0';
-    
+
+  /* get keep-alive state */
+  if( _http_get_value_for_key( 
+    value_str, sizeof( value_str ), 
+    "Connection", 
+    this->rcvbuf, MAX_HTML_BUF_LEN )
+    )
+  {
+    if( strcasestr( value_str, "keep-alive" ) )
+        this->keep_alive = true;
+  }
+
   return HTTP_OK;
 }
 
@@ -667,7 +762,7 @@ static int http_get( HTTP_OBJ* this )
     _http_set_content_length_to_file_len( this );
     
     /* connection has to be closed after static html content is delivered */
-    if( this->mimetyp == HTTP_MIME_TEXT_HTML )
+    if( !this->keep_alive || this->mimetyp == HTTP_MIME_TEXT_HTML || this->mimetyp == HTTP_MIME_TEXT_CSS )
     {
       this->disconnect = true;
     }
@@ -819,7 +914,7 @@ int HTTP_ObjInit(
   const int   port
 )
 {
-  int len;
+  int len = strlen( ht_root_dir );
 
   /* Initialize object internals */
   memset( this, 0, sizeof( HTTP_OBJ ) );
@@ -834,7 +929,7 @@ int HTTP_ObjInit(
   this->socket = -1;
 
   /* 2: in case of trailing '/' and '\0' */
-  this->ht_root_dir = OBJ_HEAP_ALLOC( ( len = strlen( ht_root_dir ) ) + 2 ); 
+  this->ht_root_dir = OBJ_HEAP_ALLOC( len + 2 ); 
   if( this->ht_root_dir == NULL )
     return HTTP_HEAP_OVERFLOW;
   
@@ -878,6 +973,7 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
   this->url_path      = NULL;
   this->search_path   = NULL;
   this->frl           = NULL;
+  this->keep_alive    = false;
   this->disconnect    = false;
   
   /* invoke HTTP method handler */
@@ -1001,10 +1097,10 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   const char*     p_ack_add_on_str;
   int             error = HTTP_OK;
   
-  /* determine whether we put the string "Conneciton:close\n" in the ack message ( mostly the case for html pages ) */
+  /* determine whether we put the string "Conneciton:close" in the ack message ( mostly the case for html pages ) */
   if( this->disconnect )
   {
-    p_ack_add_on_str = "Connection: close\n";
+    p_ack_add_on_str = "Connection: close\r\n";
   }
   else 
   {
@@ -1019,7 +1115,7 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   }
   
   /* write header/content separation line */
-  if( HTTP_SOCKET_SEND( this->socket, "\n\n", 2, 0 ) < 0 )
+  if( HTTP_SOCKET_SEND( this->socket, "\r\n\r\n", 4, 0 ) < 0 )
     error = HTTP_SEND_ERROR;
     
   return error;
