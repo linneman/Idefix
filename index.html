@@ -1,2 +1,60 @@
-<body><html><h1>Hello World!</h1></html></body>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+     "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<title>GPG/MIME Email Filter Scripts</title>
+<link rel="stylesheet" type="text/css" href="idefix.css">
+</head>
+
+<body>
+<div id="header">
+<image src="Idefix_v128.png" height="128"  style="vertical-align:text-top; float:left; margin-left:20px; margin-right:10px;">
+<h1>Idefix</h1>
+<h2>A thin web server for embedded devices</h2>
+
+</div>
+
+<div class="colmask fullpage">
+	<div class="col1">
+		<!-- Column 1 start -->
+
+<h2>What it is?</h2>
+<p>Idefix is a very thin webserver for embedded devices. Its main  purpose it to deliver content statically where most of the user interface control logic should be implemented on the client side using java script.</p>
+
+<p>The code is implemented in pure ANSI-C and does not necessarily require a TCP/IP stack to be installed. If TCP/IP is not available the http traffic can be routed via a serial line by byte stuffing ASCII control characteres. The controlling host is required to route the serial line to a TCP-listening port e.g. by reusing the code snippets in sockserver.c</p>
+
+<h2>Source code</h2>
+<p>The implementation is exclusively available as source code for unixoid operating systems respectively for a unix emulation environment such as cygwin or mingw under windows. Refer also to the <a href="http://github.com/linneman/Idefix">Idefix project page</a> to down load the latest version. Help or further support is also highly welcome.</p>
+
+<h2>How to install</h2>
+<ul>
+	<li>tar xvfz linneman-Idefix-e2461ed.tar.gz</li>
+	<li>cd linneman-Idefix-e2461ed</li>
+	<li>./configure</li>
+	<li>make</li>
+	<li>sudo make install</li>
+</ul>
+
+<p>You can now start the webserver from the command line by the following command:</p>
+<code>idefix -p 3000 -r html<code>
+<p>Now you should be able to access the following <a href="http://localhost:3000">url on your local machine</a>. 
+
+<h2>License</h2>
+<p>This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.</p>
+
+<p>This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.</p>
+
+<p>You should have received a copy of the GNU General Public License along with this program.  If not, see <a href="http://www.gnu.org/licenses">here</a>.</p>
+	<!-- Column 1 end -->
+</div>
+
+<div id="footer">
+<p> <b>Author: Otto Linnemann</b> </p>
+<p>October 2009, Frankfurt am Main, Germany</p>
+</div>
+
+
+
+</body>
+</html>
 
