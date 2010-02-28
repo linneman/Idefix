@@ -47,7 +47,6 @@ int service_socket_loop( const char* ht_root_dir, const int port )
   
   int                 create_socket, new_socket;
   socklen_t           addrlen;
-  ssize_t             size;
   struct sockaddr_in  address;
   const int           y = 1;
   int                 error;
@@ -111,13 +110,6 @@ int service_socket_loop( const char* ht_root_dir, const int port )
       this->socket = new_socket;
       do 
       {
-        /* Remember stack frame for later restauration */
-        OBJ_ALLOC_STACK_FRAME( this );
-      
-        size = HTTP_SOCKET_RECV( new_socket, this->rcvbuf, MAX_HTML_BUF_LEN - 1, 0 );
-        if( size > 0 )
-          this->rcvbuf[size] = '\0';
-                
         error = HTTP_ProcessRequest( this );
         if( error < 0 )
         {
@@ -126,11 +118,6 @@ int service_socket_loop( const char* ht_root_dir, const int port )
             HTTP_GetErrorMsg(error) 
             );
         }
-        
-        /* Check object's memory and release stack frame */
-        OBJ_CHECK( this );
-        OBJ_RELEASE_STACK_FRAME( this );
-         
       } while( !error && !this->disconnect );
       
       close (new_socket);

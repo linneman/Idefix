@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 0 << 8 ) | ( 6 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 0 ) )
 
 
 /*!
@@ -106,7 +106,10 @@ static const HTTP_HASH_TYPE _httpErrorTab[] =
   { HTTP_CGI_EXEC_ERROR, "error occured within cgi execution" },
   { HTTP_TOO_MANY_CGI_HANDLERS, "to many cgi handlers registered" },
   { HTTP_FILE_NOT_FOUND, "static content file like html, jpeg not found" },
-  { HTTP_NOT_IMPLEMENTED_YET, "http method of other feature not implmented yet" }
+  { HTTP_NOT_IMPLEMENTED_YET, "http method of other feature not implmented yet" },
+  { HTTP_HEADER_ERROR, "could not read http header or header is corrupted" },
+  { HTTP_POST_DATA_TOO_BIG, "too many bytes in http post body" },
+  { HTTP_POST_IO_ERROR, "could not read http post data " }
 };
 
 const int _httpErrorTabSize = sizeof( _httpErrorTab ) / sizeof( HTTP_HASH_TYPE );
@@ -240,10 +243,24 @@ static void _http_trim( char *string, const int max_len )
 {
   int i, j;
   
+  /* harmonize separation characters and eof characters  */
+  for( i=0; i<max_len && string[i]!='\0'; ++i )
+  {
+    if( string[i] == '\t' )
+    { 
+      string[i] = ' ';
+    }
+    
+    if( string[i] == '\r'  || string[i] == '\n' )
+    {
+      string[i] = '\0';
+    }
+  }
+  
   /* determine prefix length */
   for( i=0; i<max_len && string[i]!='\0'; ++i )
   {
-    if( ! ( string[i] == ' ' || string[i] == '\t' ) )
+    if( ! ( string[i] == ' ' ) )
       break;
   }
   
@@ -252,11 +269,12 @@ static void _http_trim( char *string, const int max_len )
   {
     string[j] = string[i];
   }
+  string[j] = '\0';
   
   /* determine trailing space including cr, lf */
   for( --i; i > 0 ; --i )
   {
-    if( ! ( string[i] == ' ' || string[i] == '\t' || string[i] == '\r'  || string[i] == '\n' ) )
+    if( ! ( string[i] == ' ' ) )
       break;
   }
   
@@ -273,18 +291,15 @@ static int _http_get_value_for_key(
   const int   max_val_len, 
   const char* keybuf,
   const char* pbuf, 
-  const long  max_pbuf_len 
+  const long  pbuf_len 
 )
 {
   int         found = false;
   const int   keylen = strlen( keybuf );
   long        i, j;
   
-  for( i=0; i < max_pbuf_len - max_val_len; ++i )
-  {
-    if( strcmp( & pbuf[i], "\r\n\r\n" ) == 0 )
-      break;  /* end of header */
-  
+  for( i=0; i < pbuf_len - max_val_len; ++i )
+  {  
     found = true;
     for( j=0; j<keylen; ++j )
     {
@@ -562,6 +577,55 @@ static int _call_cgi_handler( HTTP_OBJ* this, int handler_id )
 }
 
 
+/*!
+ *  receice http header from socket connection
+ */
+static int _http_receive_header( HTTP_OBJ* this )
+{
+  int   eoh_found = false;
+  char  byte;
+  int   c = 0;
+
+  while( c < MAX_HTML_BUF_LEN  &&  HTTP_SOCKET_RECV( this->socket, &byte, 1, 0 ) == 1 )
+  {
+    this->rcvbuf[c++] = byte;
+    
+    if( c > 4 && memcmp( & this->rcvbuf[c-4], "\r\n\r\n", 4 ) == 0)
+    {
+      /* end of header */
+      this->rcvbuf[c-4] = '\0';
+      eoh_found = true;
+      break;
+    }
+  }
+  
+  this->header_len = c-4;
+  this->body_ptr = & this->rcvbuf[ this->header_len + 1 ];
+  
+  if( eoh_found )
+    return HTTP_OK;
+  else {
+    return HTTP_HEADER_ERROR;
+  }
+}
+
+
+/*!
+ *  receice http body block from socket connection ( post )
+ */
+static int _http_receive_body( HTTP_OBJ* this )
+{
+  /* check for enough memory space before reading  */
+  if( this->body_len > MAX_HTML_BUF_LEN - this->header_len )
+    HTTP_POST_DATA_TOO_BIG;
+    
+  if( HTTP_SOCKET_RECV( this->socket, this->body_ptr, this->body_len, 0 ) != this->body_len )
+    return HTTP_POST_IO_ERROR;
+  else 
+    return HTTP_OK;
+}
+
+
 
 /*!
  *  Parse HTTP header
@@ -573,7 +637,7 @@ static int _call_cgi_handler( HTTP_OBJ* this, int handler_id )
  *    this->frl
  *    this->mimetyp
  */
-static int http_parse_header( HTTP_OBJ* this )
+static int http_read_header( HTTP_OBJ* this )
 {
   const int       frl_size = HTML_MAX_URL_SIZE + HTML_MAX_PATH_LEN;
   char            *frl;         /* absolute path within local file system for given url */
@@ -583,7 +647,23 @@ static int http_parse_header( HTTP_OBJ* this )
    
   int             path_sep_idx, error;
   int             i, j;
-    
+  
+  /* reset internal states first */
+  this->body_ptr      = 0;
+  this->body_len      = 0;
+  this->content_len   = 0;
+  this->header_len    = 0; 
+  this->mimetyp       = HTTP_MIME_UNDEFINED;
+  this->url_path      = NULL;
+  this->search_path   = NULL;
+  this->frl           = NULL;
+  this->keep_alive    = false;
+  this->disconnect    = false;
+
+  /* read header bytes */
+  error = _http_receive_header( this );
+  if( error != HTTP_OK )
+    return error;
     
   /* allocate temporary used memory  */
   this->url_path      = url_path    = OBJ_STACK_ALLOC( HTML_MAX_PATH_LEN );
@@ -592,6 +672,44 @@ static int http_parse_header( HTTP_OBJ* this )
   if( this->frl == NULL )
     return HTTP_STACK_OVERFLOW;
   
+  /* get http mehtod */
+  if( strncmp( this->rcvbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
+  {
+    this->method_id = HTTP_GET_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_POST, sizeof(HTTP_POST)-1 ) == 0 )
+  {
+    this->method_id = HTTP_POST_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_HEAD, sizeof(HTTP_HEAD)-1) == 0 )
+  {
+    this->method_id = HTTP_HEAD_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_PUT, sizeof(HTTP_PUT)-1 ) == 0 )
+  {
+    this->method_id = HTTP_PUT_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_DELETE, sizeof(HTTP_DELETE)-1 ) == 0 )
+  {
+    this->method_id = HTTP_DELETE_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_TRACE, sizeof(HTTP_TRACE)-1 ) == 0 )
+  {
+    this->method_id = HTTP_TRACE_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_OPTIONS, sizeof(HTTP_OPTIONS)-1 ) == 0 )
+  {
+    this->method_id = HTTP_OPTIONS_ID;
+  }
+  else if( strncmp( this->rcvbuf, HTTP_CONNECT, sizeof(HTTP_CONNECT)-1 ) == 0 )
+  {
+    this->method_id = HTTP_CONNECT_ID;
+  }  
+  else 
+  {
+    error = HTTP_WRONG_METHOD;
+  }
+          
   /* get url */
   error = _http_get_url_from_request( frl, this->rcvbuf );
   if( error != 0 )
@@ -630,11 +748,21 @@ static int http_parse_header( HTTP_OBJ* this )
   if( _http_get_value_for_key( 
     value_str, sizeof( value_str ), 
     "Connection", 
-    this->rcvbuf, MAX_HTML_BUF_LEN )
+    this->rcvbuf, this->header_len )
     )
   {
     if( strcasestr( value_str, "keep-alive" ) )
         this->keep_alive = true;
+  }
+
+  /* get received content length */
+  if( _http_get_value_for_key( 
+    value_str, sizeof( value_str ), 
+    "Content-Length", 
+    this->rcvbuf, this->header_len )
+    )
+  {
+    this->body_len = atoi( value_str );
   }
 
   return HTTP_OK;
@@ -674,13 +802,6 @@ static int http_head( HTTP_OBJ* this )
   struct stat     file_stat;
   
   printf("received HEAD command: %s\n", this->rcvbuf );
-
-  /* retrieve url_path, search_path and frl (file resouce location) */
-  error = http_parse_header( this );
-  if( error < 0 )
-  {
-    return error;
-  }
     
   /* check whether CGI handler exists */
   if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
@@ -730,13 +851,6 @@ static int http_get( HTTP_OBJ* this )
   struct stat     file_stat;
   
   printf("received GET command: %s\n", this->rcvbuf );
-
-  /* retrieve url_path, search_path and frl (file resouce location) */
-  error = http_parse_header( this );
-  if( error < 0 )
-  {
-    return error;
-  }
     
   /* check whether CGI handler exists */
   if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
@@ -762,8 +876,8 @@ static int http_get( HTTP_OBJ* this )
     /* set content length in http header */
     _http_set_content_length_to_file_len( this );
     
-    /* connection has to be closed after static html content is delivered */
-    if( !this->keep_alive || this->mimetyp == HTTP_MIME_TEXT_HTML || this->mimetyp == HTTP_MIME_TEXT_CSS )
+    /* connection has to be closed if client requests it */
+    if( ! this->keep_alive )
     {
       this->disconnect = true;
     }
@@ -806,12 +920,10 @@ static int http_post( HTTP_OBJ* this )
    
   printf("received POST command: %s\n", this->rcvbuf );
 
-  /* retrieve url_path, search_path and frl (file resouce location) */
-  error = http_parse_header( this );
-  if( error < 0 )
-  {
+  /* read post block */
+  error = _http_receive_body( this );
+  if( error != HTTP_OK )
     return error;
-  }
 
   /* check whether CGI handler exists */
   if( ( handler_id = _find_cgi_handler( this ) ) >= 0 )
@@ -966,62 +1078,61 @@ int HTTP_ObjInit(
  *******************************************************************************/
 int HTTP_ProcessRequest( HTTP_OBJ* this )
 {
-  int retcode = HTTP_OK;
+  int retcode;
   
-  /* reset internal states first */
-  this->content_len = 0;
-  this->mimetyp = HTTP_MIME_UNDEFINED;
-  this->url_path      = NULL;
-  this->search_path   = NULL;
-  this->frl           = NULL;
-  this->keep_alive    = false;
-  this->disconnect    = false;
+  /* Remember stack frame for later restauration */
+  OBJ_ALLOC_STACK_FRAME( this );
+
+
+  /* read and parse header */
+  retcode = http_read_header( this );
+  if( retcode != HTTP_OK )
+    return retcode;
   
   /* invoke HTTP method handler */
-  if( strncmp( this->rcvbuf, HTTP_GET, sizeof(HTTP_GET)-1 ) == 0 )
+  switch( this->method_id )
   {
-    this->method_id = HTTP_GET_ID;
-    retcode = http_get( this );
+    case HTTP_GET_ID:
+      retcode = http_get( this );
+      break;
+      
+    case HTTP_POST_ID:
+      retcode = http_post( this );
+      break;
+      
+    case HTTP_HEAD_ID:
+      retcode = http_head( this );
+      break;
+
+    case HTTP_PUT_ID:
+      retcode = http_put( this );
+      break;
+
+    case HTTP_DELETE_ID:
+      retcode = http_delete( this );
+      break;
+
+    case HTTP_TRACE_ID:
+      retcode = http_trace( this );
+      break;
+
+    case HTTP_OPTIONS_ID:
+      retcode = http_options( this );
+      break;
+
+    case HTTP_CONNECT_ID:
+      retcode = http_connect( this );
+      break;
+      
+    default:
+      retcode = HTTP_WRONG_METHOD;
+      break;
+
   }
-  else if( strncmp( this->rcvbuf, HTTP_POST, sizeof(HTTP_POST)-1 ) == 0 )
-  {
-    this->method_id = HTTP_POST_ID;
-    retcode = http_post( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_HEAD, sizeof(HTTP_HEAD)-1) == 0 )
-  {
-    this->method_id = HTTP_HEAD_ID;
-    retcode = http_head( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_PUT, sizeof(HTTP_PUT)-1 ) == 0 )
-  {
-    this->method_id = HTTP_PUT_ID;
-    retcode = http_put( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_DELETE, sizeof(HTTP_DELETE)-1 ) == 0 )
-  {
-    this->method_id = HTTP_DELETE_ID;
-    retcode = http_delete( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_TRACE, sizeof(HTTP_TRACE)-1 ) == 0 )
-  {
-    this->method_id = HTTP_TRACE_ID;
-    retcode = http_trace( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_OPTIONS, sizeof(HTTP_OPTIONS)-1 ) == 0 )
-  {
-    this->method_id = HTTP_OPTIONS_ID;
-    retcode = http_options( this );
-  }
-  else if( strncmp( this->rcvbuf, HTTP_CONNECT, sizeof(HTTP_CONNECT)-1 ) == 0 )
-  {
-    this->method_id = HTTP_CONNECT_ID;
-    retcode = http_connect( this );
-  }  
-  else 
-  {
-    retcode = HTTP_WRONG_METHOD;
-  }
+  
+  /* Check object's memory and release stack frame */
+  OBJ_CHECK( this );
+  OBJ_RELEASE_STACK_FRAME( this );
   
   return( retcode );
 }

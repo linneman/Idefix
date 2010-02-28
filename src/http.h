@@ -74,6 +74,9 @@
 #define HTTP_TOO_MANY_CGI_HANDLERS  (  -9 )   /* only HTTP_MAX_CGI_HANDLERS allowed */
 #define HTTP_FILE_NOT_FOUND         ( -10 )   /* static content file like html, jpeg not found */
 #define HTTP_NOT_IMPLEMENTED_YET    ( -11 )   /* http method of other feature not implmented yet */
+#define HTTP_HEADER_ERROR           ( -12 )   /* malfromed http header */
+#define HTTP_POST_DATA_TOO_BIG      ( -13 )   /* too many bytes in post block */
+#define HTTP_POST_IO_ERROR          ( -14 )   /* could not read http post data */
 
 
 /*!
@@ -152,6 +155,12 @@ typedef struct _HTTP_OBJ
   int   port;           /* server is listening to port */
   int   socket;         /* file respectively socket descriptor */
   char* rcvbuf;         /* receiving buffer ( header and body ) */
+  char* body_ptr;       /* pointer to http body */
+  int   header_len;     /* length of the http request header */
+  int   body_len;       /* length of the http request body */
+  long  content_len;    /* lenght of content which is sent back to server */
+  int   mimetyp;        /* mime typ */
+  int   disconnect;     /* disconnect request if not zero */
   char* ht_root_dir;    /* root directory for static web content */
   
   /* private temporary data */
@@ -159,11 +168,9 @@ typedef struct _HTTP_OBJ
   char* url_path;       /* first part of the URL */
   char* search_path;    /* search path of the URL (separated by ?) */
   char* frl;            /* absolute path within local file system for given url */
-  long  content_len;    /* size of the content within body in bytes */
-  int   mimetyp;        /* mime typ */
   int   keep_alive;     /* is set to 1 when header key Connection: keep-alive given */
   
-  int   disconnect;     /* disconnect request if not zero */
+  
   
   /* cgi handler table, handlers with more specific search paths are served first */
   HTTP_CGI_HASH    cgi_handler_tab[HTTP_MAX_CGI_HANDLERS];
