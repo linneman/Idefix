@@ -41,11 +41,13 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
     "</body></html>\n",
     this->method_id, this->url_path, this->search_path
     );
+  this->content_len = strlen( content );
+  
   
   error = HTTP_SendHeader( this, HTTP_ACK_OK );
   if( error == HTTP_OK )
   {
-    error = HTTP_SOCKET_SEND( this->socket, content, strlen( content ), 0 );
+    error = HTTP_SOCKET_SEND( this->socket, content, this->content_len, 0 );
   }
   
   if( error != HTTP_OK )

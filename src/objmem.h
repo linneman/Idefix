@@ -223,79 +223,190 @@ typedef struct
   OBJ_DELCARE_LOCAL_HEAP( 4 );
 } OBJ_PROTOTYP;
 
-/* internal helper for struct member access */
-#define OBJ_ACCESS( m )   ( ((OBJ_PROTOTYP *)this)->m )
-
-
-/*
- *  OBJ_ALLOC_BYTES_FORM_STACK(bytes)
- *  OBJ_ALLOC_BYTES_FORM_STACK(bytes)
- *
- *  Allocate the given number of bytes from heap or stack
- *  These macros should not be invoked from outside because
- *  the memory needs to be aligned in the very most cases.
- *  Use OBJ_HEAP_ALLOC() and OBJ_STACK_ALLOC() instead.
- */
-#define OBJ_ALLOC_BYTES_FORM_STACK( bytes )    ( (void *)( ((this->stackPtr-=(bytes)) > this->heapPtr ) ? (this->stackPtr) : (this->stackPtr+=(bytes), NULL) ) )
-#define OBJ_ALLOC_BYTES_FORM_HEAP( bytes )     ( (void *)( ((this->heapPtr+=(bytes)) < this->stackPtr ) ? (this->heapPtr-(bytes)) : (this->heapPtr-=(bytes), NULL) ) )
-
-
-/*
- *  OBJ_ADDR_ALIGN_STACK(size)
- *  OBJ_ADDR_ALIGN_HEAP(size)
- *
- *  Utility function for changing stack / heap pointers to the
- *  next aligned address.
- */
-#define OBJ_ADDR_ALIGN_OFFSET(ptr, div)        ( (unsigned long)(ptr) % (div) )
-
-#define OBJ_ADDR_ALIGN_STACK(size)             ( OBJ_ALLOC_BYTES_FORM_STACK( OBJ_ADDR_ALIGN_OFFSET( this->stackPtr, size ) ) )
-#define OBJ_ADDR_ALIGN_HEAP(size)              ( OBJ_ALLOC_BYTES_FORM_HEAP( OBJ_ADDR_ALIGN_OFFSET( this->heapPtr, size ) ) )
 
 
 /*!
- *  OBJ_HEAP_ALLOC( bytes )
- *  OBJ_STACK_ALLOC( bytes )
+ *  Alloc bytes from heap
  *
- *  Most platforms require a pointer alignment to multiple of 4 bytes for
- *  larger datatypes ( float, pointers, etc). These macros align the returned 
- *  memory address for required aligment.
+ *  Function parameters
+ *    - heap_handle:    handle to heap ( pointer to heap pointer )
+ *    - stack_hanlde:   handle to stack
+ *    - size:           number of bytes to allocate
+ *    - align_to:       ensure that returned address is multiple of this
+ *
+ *  Return parameter
+ *    -R: address to allocate memory or NULL in case of out of memory
  */
-#define _OBJ_HEAP_ALLOC(bytes)                 ( (OBJ_ALLOC_BYTES_FORM_HEAP(bytes) != NULL)  ?  OBJ_ADDR_ALIGN_HEAP(4) : NULL )
-#define _OBJ_STACK_ALLOC(bytes)                ( (OBJ_ALLOC_BYTES_FORM_STACK(bytes) != NULL)  ?  OBJ_ADDR_ALIGN_STACK(4) : NULL )
-
-/*
- *    Helper function for initializing memory frame 
- */
-char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTable[], int tableIndex );
-
+static inline char* _obj_heap_alloc( 
+  char** heap_handle, 
+  char** stack_handle, 
+  const int size, 
+  const int align_to
 #ifdef _OBJ_MEM_CHK
-#define OBJ_STACK_ALLOC(bytes)                                                                            \
-  (                                                                                                       \
-    ( _OBJ_STACK_ALLOC( ( bytes ) + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                        \
-    _OBJ_init_chk_frame( this->stackPtr, bytes, this->stackDescTable, this->stackAddrTableTop++ ) :       \
-    NULL                                                                                                  \
-  )
-#else
-#define OBJ_STACK_ALLOC(bytes)  _OBJ_STACK_ALLOC(bytes)
+  ,
+  OBJ_MEM_CHK_DESC  descTable[], 
+  int*              tableIndexPtr
+#endif
+)
+{
+  char* heap_ptr  = *heap_handle;
+  char* stack_ptr = *stack_handle;
+  char* address;
+#ifdef _OBJ_MEM_CHK
+  OBJ_MEM_CHK_DESC*  descPtr = & descTable[*tableIndexPtr]; 
 #endif
 
 
 #ifdef _OBJ_MEM_CHK
-#define OBJ_HEAP_ALLOC(bytes)                                                                             \
-  (                                                                                                       \
-    ( _OBJ_HEAP_ALLOC( ( bytes ) + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN ) != NULL ) ?                         \
-    _OBJ_init_chk_frame( this->heapPtr - ( bytes ) - OBJ_PREFIX_LEN - OBJ_POSTFIX_LEN, bytes, this->heapDescTable,this->heapAddrTableTop++ ) : \
-    NULL                                                                                                  \
-  )
+  heap_ptr  += size + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN;
 #else
-#define OBJ_HEAP_ALLOC(bytes)  _OBJ_HEAP_ALLOC(bytes)
+  heap_ptr  += size;
 #endif
+  heap_ptr  += ( (unsigned long)(heap_ptr) % (align_to) );
+
+  
+  if( heap_ptr < stack_ptr )
+  {    
+#ifdef _OBJ_MEM_CHK
+    address = *heap_handle + OBJ_PREFIX_LEN;
+    *heap_handle = heap_ptr;
+
+    memset( address - OBJ_PREFIX_LEN, OBJ_PREFIX_CHAR, OBJ_PREFIX_LEN );
+    memset( address + size, OBJ_POSTFIX_CHAR, OBJ_POSTFIX_LEN );
+    descPtr->addr = address;
+    descPtr->size = size;
+    ++(*tableIndexPtr);
+#else
+    address = *heap_handle;
+    *heap_handle = heap_ptr;
+#endif
+  }
+  else 
+  {
+    address = NULL;
+  }
+
+  return address;
+}
+
+
+/*!
+ *  Alloc bytes from stack
+ *
+ *  Function parameters
+ *    - heap_handle:    handle to heap ( pointer to heap pointer )
+ *    - stack_hanlde:   handle to stack
+ *    - size:           number of bytes to allocate
+ *    - align_to:       ensure that returned address is multiple of this
+ *
+ *  Return parameter
+ *    -R: address to allocate memory or NULL in case of out of memory
+ */
+static inline char* _obj_stack_alloc( 
+  char** heap_handle, 
+  char** stack_handle, 
+  const int size, 
+  const int align_to
+#ifdef _OBJ_MEM_CHK
+  ,
+  OBJ_MEM_CHK_DESC  descTable[], 
+  int*              tableIndexPtr
+#endif
+)
+{
+  char* heap_ptr  = *heap_handle;
+  char* stack_ptr = *stack_handle;
+  char* address;
+#ifdef _OBJ_MEM_CHK
+  OBJ_MEM_CHK_DESC*  descPtr = & descTable[*tableIndexPtr]; 
+#endif
+
+  
+#ifdef _OBJ_MEM_CHK
+  stack_ptr  -= size + OBJ_PREFIX_LEN + OBJ_POSTFIX_LEN;
+#else
+  stack_ptr  -= size;
+#endif
+  stack_ptr  -= ( (unsigned long)(stack_ptr) % (align_to) );
+
+  
+  if( heap_ptr < stack_ptr )
+  {
+#ifdef _OBJ_MEM_CHK
+    address = stack_ptr + OBJ_PREFIX_LEN;
+    *stack_handle = stack_ptr;
+
+    memset( address - OBJ_PREFIX_LEN, OBJ_PREFIX_CHAR, OBJ_PREFIX_LEN );
+    memset( address + size, OBJ_POSTFIX_CHAR, OBJ_POSTFIX_LEN );
+    descPtr->addr = address;
+    descPtr->size = size;
+    ++(*tableIndexPtr);
+#else
+    address = stack_ptr;
+    *stack_handle = stack_ptr;
+#endif
+  }
+  else 
+  {
+    address = NULL;
+  }
+
+  return address;
+}
+
+
+/*! 
+ *  Allocate bytes from object's internal stack
+ */
+#ifdef _OBJ_MEM_CHK
+#define OBJ_STACK_ALLOC(bytes)    \
+  _obj_stack_alloc(               \
+    & this->heapPtr,              \
+    & this->stackPtr,             \
+    bytes,                        \
+    4,                            \
+    this->stackDescTable,         \
+    & this->stackAddrTableTop     \
+    )
+#else
+#define OBJ_STACK_ALLOC(bytes)    \
+  _obj_stack_alloc(               \
+    & this->heapPtr,              \
+    & this->stackPtr,             \
+    bytes,                        \
+    4                             \
+    )
+#endif
+
+
+/*! 
+ *  Allocate bytes from object's internal heap
+ */
+#ifdef _OBJ_MEM_CHK
+#define OBJ_HEAP_ALLOC(bytes)     \
+  _obj_heap_alloc(                \
+    & this->heapPtr,              \
+    & this->stackPtr,             \
+    bytes,                        \
+    4,                            \
+    this->heapDescTable,          \
+    & this->heapAddrTableTop      \
+    )
+#else
+#define OBJ_HEAP_ALLOC(bytes)     \
+  _obj_heap_alloc(                \
+    & this->heapPtr,              \
+    & this->stackPtr,             \
+    bytes,                        \
+    4                             \
+    )
+#endif
+
 
 /*!
  *  Allocate a new stack frame for a given object for later release 
  */
-#define OBJ_ALLOC_STACK_FRAME( this )          { assert( this->framePtrIndex < OBJ_MAX_FRAMES ); this->framePtrTab[ this->framePtrIndex++ ] = this->stackPtr;  }
+#define OBJ_ALLOC_STACK_FRAME( this )           { assert( this->framePtrIndex < OBJ_MAX_FRAMES ); this->framePtrTab[ this->framePtrIndex++ ] = this->stackPtr;  }
 
 
 /*!
@@ -324,7 +435,7 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
                                                                       \
   for( i=0; i < this->stackAddrTableTop; ++ i )                       \
   {                                                                   \
-    checked_frame = this->stackDescTable[i].addr;                     \
+    checked_frame = this->stackDescTable[i].addr - OBJ_PREFIX_LEN;    \
                                                                       \
     for( j=0; j < OBJ_PREFIX_LEN; ++j )                               \
     {                                                                 \
@@ -335,8 +446,8 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
       }                                                               \
     }                                                                 \
                                                                       \
-    checked_frame += OBJ_PREFIX_LEN + this->stackDescTable[i].size;   \
-    for( j=0; j < OBJ_PREFIX_LEN; ++j )                               \
+    checked_frame = this->stackDescTable[i].addr + this->stackDescTable[i].size;   \
+    for( j=0; j < OBJ_POSTFIX_LEN; ++j )                               \
     {                                                                 \
       if( checked_frame[j] != OBJ_POSTFIX_CHAR )                      \
       {                                                               \
@@ -363,7 +474,7 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
                                                                       \
   for( i=0; i < this->heapAddrTableTop; ++ i )                        \
   {                                                                   \
-    checked_frame = this->heapDescTable[i].addr;                      \
+    checked_frame = this->heapDescTable[i].addr - OBJ_PREFIX_LEN;     \
                                                                       \
     for( j=0; j < OBJ_PREFIX_LEN; ++j )                               \
     {                                                                 \
@@ -374,8 +485,8 @@ char*   _OBJ_init_chk_frame( char* addr, const int size, OBJ_MEM_CHK_DESC descTa
       }                                                               \
     }                                                                 \
                                                                       \
-    checked_frame += OBJ_PREFIX_LEN + this->heapDescTable[i].size;    \
-    for( j=0; j < OBJ_PREFIX_LEN; ++j )                               \
+    checked_frame = this->heapDescTable[i].addr + this->heapDescTable[i].size;    \
+    for( j=0; j < OBJ_POSTFIX_LEN; ++j )                               \
     {                                                                 \
       if( checked_frame[j] != OBJ_POSTFIX_CHAR )                      \
       {                                                               \

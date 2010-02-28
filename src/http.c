@@ -754,6 +754,7 @@ static int http_get( HTTP_OBJ* this )
     {
       if( !( file_stat.st_mode & S_IFREG ) )
       {
+        HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
         return HTTP_FILE_NOT_FOUND;
       }
     }
@@ -778,7 +779,7 @@ static int http_get( HTTP_OBJ* this )
     fp = fopen( this->frl, "r" );
     if( fp == NULL )
     {
-      _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+      HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
       return HTTP_FILE_NOT_FOUND;
     }
     
@@ -821,7 +822,7 @@ static int http_post( HTTP_OBJ* this )
   else 
   {
     /* when no handler exists generate page not found error */
-    _http_ack( this->socket, HTTP_ACK_NOT_FOUND, NULL, 0, NULL );
+    HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
     error = HTTP_CGI_HANLDER_NOT_FOUND;
   }
 

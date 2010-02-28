@@ -46,7 +46,7 @@ CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
 am_idefix_OBJECTS = cgi.$(OBJEXT) http.$(OBJEXT) main.$(OBJEXT) \
-	objmem.$(OBJEXT) sockserver.$(OBJEXT)
+	sockserver.$(OBJEXT)
 idefix_OBJECTS = $(am_idefix_OBJECTS)
 idefix_LDADD = $(LDADD)
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
@@ -148,7 +148,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-idefix_SOURCES = cgi.c http.c main.c objmem.c sockserver.c
+idefix_SOURCES = cgi.c http.c main.c sockserver.c
 idefix_LDDADD = $(LIBOBJS)
 all: all-am
 
@@ -234,7 +234,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cgi.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/main.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/objmem.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sockserver.Po@am__quote@
 
 .c.o:
