@@ -131,7 +131,7 @@ static const HTTP_HASH_TYPE HttpAckTable[] =
  */
 static const HTTP_HASH_TYPE HttpMimeTypeTable[] =
 {
-  { HTTP_MIME_UNDEFINED, "undefined" },
+  { HTTP_MIME_UNDEFINED, "application/octet-stream" },
   { HTTP_MIME_TEXT_HTML, "text/html" },
   { HTTP_MIME_TEXT_CSS, "text/css" },
   { HTTP_MIME_TEXT_PLAIN, "text/plain" },
@@ -139,6 +139,7 @@ static const HTTP_HASH_TYPE HttpMimeTypeTable[] =
   { HTTP_MIME_IMAGE_PNG, "image/png" },
   { HTTP_MIME_IMAGE_GIF, "image/gif" },
   { HTTP_MIME_IMAGE_TIFF, "image/tiff" },
+  { HTTP_MIME_IMAGE_ICON, "image/x-icon" },
   { HTTP_MIME_APPLICATION_JAVASCRIPT, "application/javascript" },
   { HTTP_MIME_APPLICATION_JSON, "application/json" },
   { HTTP_MIME_APPLICATION_XML, "application/xml" },
@@ -167,6 +168,7 @@ static const HTTP_HASH_TYPE HttpFileExtMimeTable[] =
   { HTTP_MIME_IMAGE_PNG, "png" },
   { HTTP_MIME_IMAGE_GIF, "gif" },
   { HTTP_MIME_IMAGE_TIFF, "tiff" },
+  { HTTP_MIME_IMAGE_ICON, "ico" },
   { HTTP_MIME_APPLICATION_JAVASCRIPT, "js" },
   { HTTP_MIME_APPLICATION_JSON, "json" },
   { HTTP_MIME_APPLICATION_XML, "xml" },
@@ -208,7 +210,7 @@ static HTTP_MIME_TYPE   _http_get_mime_type_from_string( const char *string )
  */
 static HTTP_MIME_TYPE   _http_get_mime_type_from_filename( const char *filename )
 {
-  int len, i, index = HTTP_MIME_UNDEFINED;
+  int len, i, j, index = HTTP_MIME_UNDEFINED;
   
   /* determine position of file extension in filename (last dot) */
   len=strlen( filename );
@@ -223,11 +225,11 @@ static HTTP_MIME_TYPE   _http_get_mime_type_from_filename( const char *filename 
   
   ++i;
   
-  for( i=1; i < HttpFileExtMimeTableSize; ++i )
+  for( j=0; j < HttpFileExtMimeTableSize; ++j )
   {
-    if( strcasestr( & filename[i], HttpFileExtMimeTable[i].txt ) != NULL )
+    if( strcasestr( & filename[i], HttpFileExtMimeTable[j].txt ) != NULL )
     {
-      index = i;
+      index = j;
       break;
     }
   }
@@ -298,7 +300,7 @@ static int _http_get_value_for_key(
   const int   keylen = strlen( keybuf );
   long        i, j;
   
-  for( i=0; i < pbuf_len - max_val_len; ++i )
+  for( i=0; i < pbuf_len - keylen; ++i )
   {  
     found = true;
     for( j=0; j<keylen; ++j )
@@ -901,6 +903,8 @@ static int http_get( HTTP_OBJ* this )
     do {
       bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
       bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
+      if( bytes_written < 0 )
+        fprintf( stderr, "!!!!!!!!!!!!!! SHOULD NEVER HAPPEN !!!!!!!!!!!!!!!\n\n");
     } while( bytes_read > 0  &&  bytes_written == bytes_read );
     
     fclose( fp );
@@ -1214,7 +1218,11 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   {
     p_ack_add_on_str = "Connection: close\r\n";
   }
-  else 
+  else if( this->keep_alive )
+  {
+    p_ack_add_on_str = "Connection: Keep-Alive\r\n";
+  }
+  else
   {
     p_ack_add_on_str = NULL;
   }

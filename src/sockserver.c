@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -78,7 +79,8 @@ int service_socket_loop( const char* ht_root_dir, const int port )
   }
 
 
-  setsockopt( create_socket, SOL_SOCKET, SO_REUSEADDR, &y, sizeof(int));
+  // setsockopt( create_socket, SOL_SOCKET,  SO_REUSEADDR, &y, sizeof(int));
+  // setsockopt( create_socket, IPPROTO_TCP,  TCP_NODELAY, &y, sizeof(int));
   
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
@@ -92,15 +94,16 @@ int service_socket_loop( const char* ht_root_dir, const int port )
     return -1;
   }
   
-  listen(create_socket, 5);
+  listen( create_socket, 5 );
   addrlen = sizeof( struct sockaddr_in );
   
   while (1) 
   {
     printf("Waiting for client connections ...\n");
     new_socket = accept ( create_socket,
-                         (struct sockaddr *) &address,
-                         &addrlen );
+                         NULL, // (struct sockaddr *) &address,
+                         NULL ); // &addrlen );
+    // setsockopt( new_socket, IPPROTO_TCP,  TCP_NODELAY, &y, sizeof(int));
     
     if (new_socket > 0)
     {
