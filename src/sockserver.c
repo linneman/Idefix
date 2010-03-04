@@ -79,8 +79,7 @@ int service_socket_loop( const char* ht_root_dir, const int port )
   }
 
 
-  // setsockopt( create_socket, SOL_SOCKET,  SO_REUSEADDR, &y, sizeof(int));
-  // setsockopt( create_socket, IPPROTO_TCP,  TCP_NODELAY, &y, sizeof(int));
+  setsockopt( create_socket, SOL_SOCKET,  SO_REUSEADDR, &y, sizeof(int));
   
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = INADDR_ANY;
@@ -101,9 +100,8 @@ int service_socket_loop( const char* ht_root_dir, const int port )
   {
     printf("Waiting for client connections ...\n");
     new_socket = accept ( create_socket,
-                         NULL, // (struct sockaddr *) &address,
-                         NULL ); // &addrlen );
-    // setsockopt( new_socket, IPPROTO_TCP,  TCP_NODELAY, &y, sizeof(int));
+      (struct sockaddr *) &address,
+      &addrlen );
     
     if (new_socket > 0)
     {
@@ -121,7 +119,7 @@ int service_socket_loop( const char* ht_root_dir, const int port )
             HTTP_GetErrorMsg(error) 
             );
         }
-      } while( !error && !this->disconnect );
+      } while( !error && !this->keep_alive );
       
       close (new_socket);
       }

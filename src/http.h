@@ -48,6 +48,12 @@
 
 
 /*!
+ *  If 1 TCP connections are kept alive
+ */
+#define HTTP_KEEP_ALIVE             1
+
+
+/*!
  *  HTTP method ID's
  */
 #define HTTP_GET_ID                 0x01
@@ -68,15 +74,17 @@
 #define HTTP_BUFFER_OVERRUN         (  -3 )   /* in example for given URL */
 #define HTTP_MALFORMED_URL          (  -4 )   /* comprehensive URL check failed */
 #define HTTP_SEND_ERROR             (  -5 )   /* in example due to sigpipe */
-#define HTTP_WRONG_METHOD           (  -6 )   /* http method does not exist */
-#define HTTP_CGI_HANLDER_NOT_FOUND  (  -7 )   /* implementation bug if happens */
-#define HTTP_CGI_EXEC_ERROR         (  -8 )   /* error occured within cgi execution */
-#define HTTP_TOO_MANY_CGI_HANDLERS  (  -9 )   /* only HTTP_MAX_CGI_HANDLERS allowed */
-#define HTTP_FILE_NOT_FOUND         ( -10 )   /* static content file like html, jpeg not found */
-#define HTTP_NOT_IMPLEMENTED_YET    ( -11 )   /* http method of other feature not implmented yet */
-#define HTTP_HEADER_ERROR           ( -12 )   /* malfromed http header */
-#define HTTP_POST_DATA_TOO_BIG      ( -13 )   /* too many bytes in post block */
-#define HTTP_POST_IO_ERROR          ( -14 )   /* could not read http post data */
+#define HTTP_RCV_ERROR              (  -6 )   /* error while receiving data from socket */
+#define HTTP_RECV_TIMEOUT           (  -7 )   /* time out while waiting for incomming data */
+#define HTTP_WRONG_METHOD           (  -8 )   /* http method does not exist */
+#define HTTP_CGI_HANLDER_NOT_FOUND  (  -9 )   /* implementation bug if happens */
+#define HTTP_CGI_EXEC_ERROR         ( -10 )   /* error occured within cgi execution */
+#define HTTP_TOO_MANY_CGI_HANDLERS  ( -11 )   /* only HTTP_MAX_CGI_HANDLERS allowed */
+#define HTTP_FILE_NOT_FOUND         ( -12 )   /* static content file like html, jpeg not found */
+#define HTTP_NOT_IMPLEMENTED_YET    ( -13 )   /* http method of other feature not implmented yet */
+#define HTTP_HEADER_ERROR           ( -14 )   /* malfromed http header */
+#define HTTP_POST_DATA_TOO_BIG      ( -15 )   /* too many bytes in post block */
+#define HTTP_POST_IO_ERROR          ( -16 )   /* could not read http post data */
 
 
 /*!
@@ -161,7 +169,7 @@ typedef struct _HTTP_OBJ
   int   body_len;       /* length of the http request body */
   long  content_len;    /* lenght of content which is sent back to server */
   int   mimetyp;        /* mime typ */
-  int   disconnect;     /* disconnect request if not zero */
+  // int   disconnect;     /* disconnect request if not zero */
   char* ht_root_dir;    /* root directory for static web content */
   
   /* private temporary data */

@@ -31,7 +31,6 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
   char  content2[1024];
   
   this->mimetyp = HTTP_MIME_TEXT_HTML;
-  this->disconnect = true;
   
   snprintf( content1, sizeof(content1),
     "<html><body>\n"
@@ -62,10 +61,12 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
   error = HTTP_SendHeader( this, HTTP_ACK_OK );
   if( error == HTTP_OK )
   {
-    bytes_written = HTTP_SOCKET_SEND( this->socket, content1, len1, 0 );
-    bytes_written += HTTP_SOCKET_SEND( this->socket, content2, len2, 0 );
+    /* write header/content separation line */
+    bytes_written = HTTP_SOCKET_SEND( this->socket, "\r\n\r\n", 4 );
+    bytes_written += HTTP_SOCKET_SEND( this->socket, content1, len1 );
+    bytes_written += HTTP_SOCKET_SEND( this->socket, content2, len2 );
   
-    if( bytes_written != this->content_len )
+    if( bytes_written != this->content_len + 4 )
     {
       error = HTTP_CGI_EXEC_ERROR;
     }

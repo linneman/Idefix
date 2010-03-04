@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 0 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 1 ) )
 
 
 /*!
@@ -101,6 +101,8 @@ static const HTTP_HASH_TYPE _httpErrorTab[] =
   { HTTP_BUFFER_OVERRUN, "internal buffer overrun" },
   { HTTP_MALFORMED_URL, "malformed URL transfered" },
   { HTTP_SEND_ERROR, "send error" },
+  { HTTP_RCV_ERROR, "error while receiving data from socket" },
+  { HTTP_RECV_TIMEOUT, "time out while waiting for incomming data" },  
   { HTTP_WRONG_METHOD, "http method does not exist" },
   { HTTP_CGI_HANLDER_NOT_FOUND, "wrong CGI handler invoked (IMPLEMENTATION BUG)" },
   { HTTP_CGI_EXEC_ERROR, "error occured within cgi execution" },
@@ -500,11 +502,11 @@ static int _http_ack( int socket, const HTTP_ACK_KEY ack_key, const char* mime_t
   {
     snprintf( linebuf, HTML_MAX_STATLINE, "HTTP/1.1 %3d %s\r\n", HttpAckTable[HTTP_ACK_INTERNAL_ERROR].id, HttpAckTable[HTTP_ACK_INTERNAL_ERROR].txt );
     len = strlen( linebuf );
-    HTTP_SOCKET_SEND( socket, linebuf, len, 0 );
+    HTTP_SOCKET_SEND( socket, linebuf, len );
   }
   else 
   {
-    if( HTTP_SOCKET_SEND( socket, ackbuf, i, 0 ) < 0 )
+    if( HTTP_SOCKET_SEND( socket, ackbuf, i ) != i )
       error = HTTP_SEND_ERROR;
     
     printf( "-------- HTTP ANSWER HEADER ------->\n");
@@ -584,11 +586,11 @@ static int _call_cgi_handler( HTTP_OBJ* this, int handler_id )
  */
 static int _http_receive_header( HTTP_OBJ* this )
 {
-  int   eoh_found = false;
+  int   eoh_found = false, error;
   char  byte;
   int   c = 0;
 
-  while( c < MAX_HTML_BUF_LEN  &&  HTTP_SOCKET_RECV( this->socket, &byte, 1, 0 ) == 1 )
+  while( c < MAX_HTML_BUF_LEN  &&  ( error = HTTP_SOCKET_RECV( this->socket, &byte, 1 ) ) == 1 )
   {
     this->rcvbuf[c++] = byte;
     
@@ -604,11 +606,14 @@ static int _http_receive_header( HTTP_OBJ* this )
   this->header_len = c-4;
   this->body_ptr = & this->rcvbuf[ this->header_len + 1 ];
   
-  if( eoh_found )
+  if( error == -2 ) 
+    return HTTP_RECV_TIMEOUT;
+  else if ( error < 0 )
+    return error;
+  else if( eoh_found )
     return HTTP_OK;
-  else {
+  else 
     return HTTP_HEADER_ERROR;
-  }
 }
 
 
@@ -621,7 +626,7 @@ static int _http_receive_body( HTTP_OBJ* this )
   if( this->body_len > MAX_HTML_BUF_LEN - this->header_len )
     HTTP_POST_DATA_TOO_BIG;
     
-  if( HTTP_SOCKET_RECV( this->socket, this->body_ptr, this->body_len, 0 ) != this->body_len )
+  if( HTTP_SOCKET_RECV( this->socket, this->body_ptr, this->body_len ) != this->body_len )
     return HTTP_POST_IO_ERROR;
   else 
     return HTTP_OK;
@@ -660,7 +665,6 @@ static int http_read_header( HTTP_OBJ* this )
   this->search_path   = NULL;
   this->frl           = NULL;
   this->keep_alive    = false;
-  this->disconnect    = false;
 
   /* read header bytes */
   error = _http_receive_header( this );
@@ -820,13 +824,13 @@ static int http_head( HTTP_OBJ* this )
     {
       if( !( file_stat.st_mode & S_IFREG ) )
       {
+        HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
         return HTTP_FILE_NOT_FOUND;
       }
     }    
           
     /* set content length in http header and always request disconnection */
     _http_set_content_length_to_file_len( this );
-    this->disconnect = true;
     
     /* generate header */
     error = HTTP_SendHeader( this, HTTP_ACK_OK );
@@ -851,6 +855,7 @@ static int http_get( HTTP_OBJ* this )
   int             error = 0;
   int             handler_id;
   struct stat     file_stat;
+  int             chk_cnt = 0;
   
   printf("received GET command: %s\n", this->rcvbuf );
     
@@ -877,19 +882,7 @@ static int http_get( HTTP_OBJ* this )
     
     /* set content length in http header */
     _http_set_content_length_to_file_len( this );
-    
-    /* connection has to be closed if client requests it */
-    if( ! this->keep_alive )
-    {
-      this->disconnect = true;
-    }
-    
-    /* generate header */
-    error = HTTP_SendHeader( this, HTTP_ACK_OK );
-    if( error < 0 )
-    {
-      return error;
-    }
+        
 
     /* open and copy static content from file system */
     fp = fopen( this->frl, "r" );
@@ -898,13 +891,27 @@ static int http_get( HTTP_OBJ* this )
       HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
       return HTTP_FILE_NOT_FOUND;
     }
+    else 
+    {
+      /* generate header */
+      error = HTTP_SendHeader( this, HTTP_ACK_OK );
+      if( error < 0 )
+      {
+        return error;
+      }
+    }
+
+    /* write header/content separation line */
+    if( HTTP_SOCKET_SEND( this->socket, "\r\n\r\n", 4) != 4 )
+    {
+      error = HTTP_SEND_ERROR;
+    }
     
     /* read file blockwise and send it to the server */
     do {
       bytes_read = fread( buf, sizeof(char), HTML_CHUNK_SIZE, fp );
-      bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read, 0 );
-      if( bytes_written < 0 )
-        fprintf( stderr, "!!!!!!!!!!!!!! SHOULD NEVER HAPPEN !!!!!!!!!!!!!!!\n\n");
+      bytes_written = HTTP_SOCKET_SEND( this->socket, buf, bytes_read );
+      chk_cnt += bytes_read;
     } while( bytes_read > 0  &&  bytes_written == bytes_read );
     
     fclose( fp );
@@ -1214,17 +1221,13 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   int             error = HTTP_OK;
   
   /* determine whether we put the string "Conneciton:close" in the ack message ( mostly the case for html pages ) */
-  if( this->disconnect )
-  {
-    p_ack_add_on_str = "Connection: close\r\n";
-  }
-  else if( this->keep_alive )
+  if( this->keep_alive && HTTP_KEEP_ALIVE)
   {
     p_ack_add_on_str = "Connection: Keep-Alive\r\n";
   }
   else
   {
-    p_ack_add_on_str = NULL;
+     p_ack_add_on_str = "Connection: close\r\n";
   }
   
   /* send the ack message */
@@ -1233,11 +1236,7 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   {
     return error;
   }
-  
-  /* write header/content separation line */
-  if( HTTP_SOCKET_SEND( this->socket, "\r\n\r\n", 4, 0 ) < 0 )
-    error = HTTP_SEND_ERROR;
-    
+     
   return error;
 }
 

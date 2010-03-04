@@ -1,40 +1,18 @@
 /*
- *  socket_io.h
+ *  socket_io.c
+ *  idefix
  *
- *  abstract interface for accessing sockets
- *
- *  WebGui
- *
- *  Created by Otto Linnemann on 11.02.10.
- *  Copyright 2010 GNU General Public Licence. All rights reserved.
+ *  Created by Otto Linnemann on 04.03.10.
+ *  Copyright 2010 ScanSoft Aachen. All rights reserved.
  *
  */
 
-#ifndef _SOCKET_IO
-#define _SOCKET_IO
 
-/*!
- *  Time out when waiting for incoming data
- */
-#define HTTP_RCV_TIME_OUT           3
-
-
-/*
- *  Abstraction from UNIX funciton send
- *  Can be replaced against any other function for sending bytes 
- *  to e.g. a stream descriptor
- */
-#define HTTP_SOCKET_SEND( socket, buffer, len )        http_send_all( (socket), (buffer), (len), 0 ) 
-
-
-/*
- *  Abstraction from UNIX funciton recv
- *  Can be replaced against any other function for sending bytes 
- *  to e.g. a stream descriptor
- */
-#define HTTP_SOCKET_RECV( socket, buffer, len )        http_recv_timedout( (socket), (buffer), (len), 0, HTTP_RCV_TIME_OUT ) 
-
-
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 
 /*******************************************************************************
@@ -52,7 +30,22 @@
  *     - R:         number of successfully transmitted bytes
  * 
  *******************************************************************************/
-ssize_t http_send_all( int socket, const void* buffer, size_t length, int flags ) ;
+ssize_t http_send_all( int socket, const void* buffer, size_t length, int flags ) 
+{
+    int total = 0;          /* how many bytes we've sent */
+    int bytesleft = length; /* how many we have left to send */
+    int n;
+
+    while(total < length) {
+        n = send( socket, buffer + total, bytesleft, flags );
+        if (n == -1) { break; }
+        total += n;
+        bytesleft -= n;
+    }
+
+    return total; 
+}
+
 
 
 
@@ -74,10 +67,28 @@ ssize_t http_send_all( int socket, const void* buffer, size_t length, int flags 
  *                  -1 in case of other error
  * 
  *******************************************************************************/
+
 ssize_t http_recv_timedout( int socket, void* buffer, size_t length, 
-  int flags, int timeout);
+  int flags, int timeout)
+{
+    fd_set fds;
+    int n;
+    struct timeval tv;
 
+    /* set up the file descriptor set */
+    FD_ZERO(&fds);
+    FD_SET(socket, &fds);
 
+    /* set up the struct timeval for the timeout */
+    tv.tv_sec = timeout;
+    tv.tv_usec = 0;
 
+    /* wait until timeout or data received */
+    n = select( socket + 1, &fds, NULL, NULL, &tv);
+    if (n == 0) return -2; // timeout!
+    if (n == -1) return -1; // error
 
-#endif
+    /* data must be here, so do a normal recv() */
+    return recv( socket, buffer, length, 0);
+}
+
