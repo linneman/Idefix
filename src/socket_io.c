@@ -30,7 +30,7 @@
  *     - R:         number of successfully transmitted bytes
  * 
  *******************************************************************************/
-ssize_t http_send_all( int socket, const void* buffer, size_t length, int flags ) 
+long http_send_all( int socket, const void* buffer, long length, int flags ) 
 {
     int total = 0;          /* how many bytes we've sent */
     int bytesleft = length; /* how many we have left to send */
@@ -68,7 +68,7 @@ ssize_t http_send_all( int socket, const void* buffer, size_t length, int flags 
  * 
  *******************************************************************************/
 
-ssize_t http_recv_timedout( int socket, void* buffer, size_t length, 
+long http_recv_timedout( int socket, void* buffer, long length, 
   int flags, int timeout)
 {
     fd_set fds;
