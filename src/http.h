@@ -178,7 +178,7 @@ typedef struct _HTTP_OBJ
   char* url_path;       /* first part of the URL */
   char* search_path;    /* search path of the URL (separated by ?) */
   char* frl;            /* absolute path within local file system for given url */
-  int   keep_alive;     /* is set to 1 when header key Connection: keep-alive given */
+  int   keep_alive;     /* set to 1 when header key Connection: keep-alive given and macro HTTP_KEEP_ALIVE is true */
   
   
   

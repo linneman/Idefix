@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 2 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 3 ) )
 
 
 /*!
@@ -757,7 +757,7 @@ static int http_read_header( HTTP_OBJ* this )
     this->rcvbuf, this->header_len )
     )
   {
-    if( strcasestr( value_str, "keep-alive" ) )
+    if( strcasestr( value_str, "keep-alive" ) && HTTP_KEEP_ALIVE )
         this->keep_alive = true;
   }
 
@@ -1221,7 +1221,7 @@ int HTTP_SendHeader( HTTP_OBJ* this, HTTP_ACK_KEY ack_key )
   int             error = HTTP_OK;
   
   /* determine whether we put the string "Conneciton:close" in the ack message ( mostly the case for html pages ) */
-  if( this->keep_alive && HTTP_KEEP_ALIVE)
+  if( this->keep_alive )
   {
     p_ack_add_on_str = "Connection: Keep-Alive\r\n";
   }

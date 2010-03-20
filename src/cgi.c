@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include "cgi.h"
 
+#define MIN(x,y) ( (x)<(y) ? (x) : (y) )
 
 /*!
  *  Sample common gateway interface (CGI)
@@ -44,6 +45,10 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
     );
   len1 = strlen( content1 );
   
+  /* ensure proper EOS character, avoid buffer overflow */
+  this->body_len = MIN( this->body_len, 1000 );
+  this->body_ptr[this->body_len] = '\0';
+  
   if( this->method_id == HTTP_POST_ID )
   {
     snprintf( content2, sizeof(content2), "<p>POST:</p><code>%s</code></body></html>\n", this->body_ptr );
@@ -55,6 +60,9 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
     len2 = 0;
   }
 
+  printf("=====> RECEIVED POST DATA =====>\n");
+  printf("%s\n", this->body_ptr );
+  printf("<==============================<\n");
   
   this->content_len = len1 + len2;
   
