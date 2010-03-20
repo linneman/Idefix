@@ -119,8 +119,8 @@ int service_socket_loop( const char* ht_root_dir, const int port )
             HTTP_GetErrorMsg(error) 
             );
         }
-      } while( !error && !this->keep_alive );
-      
+      } while( !error && this->keep_alive );
+
       close (new_socket);
       }
   }

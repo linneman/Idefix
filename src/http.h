@@ -49,8 +49,9 @@
 
 /*!
  *  If 1 TCP connections are kept alive
+ *  requires several server threads for most browsers
  */
-#define HTTP_KEEP_ALIVE             1
+#define HTTP_KEEP_ALIVE             0
 
 
 /*!

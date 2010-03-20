@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 1 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 2 ) )
 
 
 /*!
@@ -1097,48 +1097,48 @@ int HTTP_ProcessRequest( HTTP_OBJ* this )
 
   /* read and parse header */
   retcode = http_read_header( this );
-  if( retcode != HTTP_OK )
-    return retcode;
   
   /* invoke HTTP method handler */
-  switch( this->method_id )
+  if( retcode == HTTP_OK )
   {
-    case HTTP_GET_ID:
-      retcode = http_get( this );
-      break;
-      
-    case HTTP_POST_ID:
-      retcode = http_post( this );
-      break;
-      
-    case HTTP_HEAD_ID:
-      retcode = http_head( this );
-      break;
+    switch( this->method_id )
+    {
+      case HTTP_GET_ID:
+        retcode = http_get( this );
+        break;
+        
+      case HTTP_POST_ID:
+        retcode = http_post( this );
+        break;
+        
+      case HTTP_HEAD_ID:
+        retcode = http_head( this );
+        break;
 
-    case HTTP_PUT_ID:
-      retcode = http_put( this );
-      break;
+      case HTTP_PUT_ID:
+        retcode = http_put( this );
+        break;
 
-    case HTTP_DELETE_ID:
-      retcode = http_delete( this );
-      break;
+      case HTTP_DELETE_ID:
+        retcode = http_delete( this );
+        break;
 
-    case HTTP_TRACE_ID:
-      retcode = http_trace( this );
-      break;
+      case HTTP_TRACE_ID:
+        retcode = http_trace( this );
+        break;
 
-    case HTTP_OPTIONS_ID:
-      retcode = http_options( this );
-      break;
+      case HTTP_OPTIONS_ID:
+        retcode = http_options( this );
+        break;
 
-    case HTTP_CONNECT_ID:
-      retcode = http_connect( this );
-      break;
-      
-    default:
-      retcode = HTTP_WRONG_METHOD;
-      break;
-
+      case HTTP_CONNECT_ID:
+        retcode = http_connect( this );
+        break;
+        
+      default:
+        retcode = HTTP_WRONG_METHOD;
+        break;
+    }
   }
   
   /* Check object's memory and release stack frame */
