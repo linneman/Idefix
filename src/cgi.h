@@ -28,6 +28,18 @@ int TestCgiHandler( struct _HTTP_OBJ* this );
 
 
 /*!
+ *  CGI Handler for retrieving Directory within JSON format
+ *
+ *  Function parameters
+ *     - this:      pointer to HTTP Object
+ *    
+ *  Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ */
+int DirCgiHandler( struct _HTTP_OBJ* this );
+
+
+/*!
  *  Sample registration of CGI handlers
  *
  *  Function parameters

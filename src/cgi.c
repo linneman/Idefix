@@ -10,6 +10,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
 #include "cgi.h"
 
 #define MIN(x,y) ( (x)<(y) ? (x) : (y) )
@@ -83,6 +88,140 @@ int TestCgiHandler( struct _HTTP_OBJ* this )
   return error;
 }
 
+/*!
+ *  CGI Handler for retrieving Directory within JSON format
+ *
+ *  Function parameters
+ *     - this:      pointer to HTTP Object
+ *    
+ *  Returnparameter
+ *     - R: 0 in case of success, otherwise error code
+ */
+int DirCgiHandler( struct _HTTP_OBJ* this )
+{
+  int   bytes_written;
+  int   error = HTTP_OK;
+
+  char  content[1024];
+  int   content_len = 0, len;
+  char  directory[300], filename[300], entrybuf[300];
+
+  DIR*            dp;
+  struct dirent*  ep;
+  struct stat     s;
+  int             filesize;
+
+  this->mimetyp = HTTP_MIME_APPLICATION_JSON;
+  
+  /* ensure proper EOS character, avoid buffer overflow */
+  this->body_len = MIN( this->body_len, 1000 );
+  this->body_ptr[this->body_len] = '\0';
+  
+  /* generate directory in JSON format */
+  
+  /* insert JSON array header */
+  sprintf( content, "[" );
+
+  /* generete intial full path name for directory to be retrieved */
+  strcpy( directory, this->ht_root_dir );
+  strcat( directory, this->search_path );
+  strcat( directory, "/");
+  
+  /* open directory and iterate through the entries */
+  dp = opendir( directory );
+  if( dp != NULL )
+  {
+    while( error == HTTP_OK && (ep = readdir (dp)) != NULL )
+    {
+      switch(ep->d_type) {
+        case DT_REG:
+          /* printf("normal file : "); */
+
+          /* determine file size */
+          
+          /* generete intial full path name for current entry to be retrieved */
+          strcpy( filename, directory );
+          strcat( filename, ep->d_name );
+
+          if (stat(filename, &s) != -1)
+          {
+            filesize = s.st_size;
+          }
+          else
+          {
+            filesize = 0;
+          }
+
+          sprintf( entrybuf,
+            "{\"filename\":\"%s\", \"filtetyp\":\"file\", \"size\":\"%d\"},",
+            ep->d_name, filesize);
+            
+          if( content_len + (len = strlen( entrybuf )) > sizeof(content) ) {
+            error = HTTP_BUFFER_OVERRUN;
+          }
+          else {
+            strcat( content, entrybuf );
+            content_len += len;
+          }
+          break;
+
+        case DT_DIR:
+          if( strcmp(ep->d_name, ".") == 0 || strcmp(ep->d_name, ".." ) == 0 )
+            continue;
+        
+          sprintf( entrybuf,
+            "{\"filename\":\"%s\", \"filtetyp\":\"dir\", \"size\":\"%d\"},",
+            ep->d_name, filesize); 
+            
+          if( content_len + (len = strlen( entrybuf )) > sizeof(content) ) {
+            error = HTTP_BUFFER_OVERRUN;
+          }
+          else {
+            strcat( content, entrybuf );
+            content_len += len;
+          }
+          break;
+
+            /* ... */
+        case DT_UNKNOWN :
+          /* printf("???       : "); */
+          break;
+
+        default:
+          break;
+      }
+    }
+    closedir (dp);
+  }
+  else
+  {
+    error = HTTP_CGI_EXEC_ERROR;
+  }
+
+  /* insert XML footer */
+  sprintf( content +strlen(content)-1, "]\n");
+  content_len += 1;
+  
+  this->content_len = content_len;
+  
+  error = HTTP_SendHeader( this, HTTP_ACK_OK );
+  if( error == HTTP_OK )
+  {
+    /* write header/content separation line */
+    bytes_written = HTTP_SOCKET_SEND( this->socket, "\r\n\r\n", 4 );
+    bytes_written += HTTP_SOCKET_SEND( this->socket, content, content_len );
+  
+    if( bytes_written != this->content_len + 4 )
+    {
+      error = HTTP_CGI_EXEC_ERROR;
+    }
+  }
+  
+  return error;
+}
+
+
+
 
 /*!
  *  Sample registration of CGI handlers
@@ -97,6 +236,8 @@ int RegisterCgiHandlers( struct _HTTP_OBJ* this )
 {
   int error = 0;
 
+  if( ! error )
+    error = HTTP_AddCgiHanlder( this, DirCgiHandler, HTTP_GET_ID, "dir" );
 
   if( ! error )
     error = HTTP_AddCgiHanlder( this, TestCgiHandler, HTTP_GET_ID, "linnemann" );

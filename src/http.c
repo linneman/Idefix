@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 3 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 4 ) )
 
 
 /*!
@@ -958,11 +958,60 @@ static int http_post( HTTP_OBJ* this )
  */
 static int http_put( HTTP_OBJ* this )
 {
-  /*
-   *  not implemented yet
-   */
-  return HTTP_NOT_IMPLEMENTED_YET;
+  FILE*           fp;
+  int             bytes_written;
+  int             error = 0;
+  struct stat     file_stat;
+  
+  printf("received PUT command: %s\n", this->rcvbuf );
+    
+  
+  /* otherwise store static content (html, json, etc.) */
+  
+  /* check for correct file status ( must be ordinary file, no directory ) */
+  error = stat( this->frl, & file_stat );
+  if( !error )
+  {
+    if( !( file_stat.st_mode & S_IFREG ) )
+    {
+      HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
+      return HTTP_FILE_NOT_FOUND;
+    }
+  }
+  
+    /* read post block */
+  error = _http_receive_body( this );
+  if( error != HTTP_OK )
+    return error;
+  
+      
+
+  /* open and copy static content from file system */
+  fp = fopen( this->frl, "w" );
+  if( fp == NULL )
+  {
+    HTTP_SendHeader( this, HTTP_ACK_NOT_FOUND );
+    return HTTP_FILE_NOT_FOUND;
+  }
+
+  /* write file and save it to servers filesystem */
+  bytes_written = fwrite( this->body_ptr, sizeof(char), this->body_len, fp );
+  fclose( fp );
+  
+  if( bytes_written != this->body_len )
+  {
+    HTTP_SendHeader( this, HTTP_ACK_INTERNAL_ERROR );
+    error = HTTP_CGI_EXEC_ERROR;
+  }
+  else
+  { 
+    HTTP_SendHeader( this, HTTP_ACK_OK );
+    error = HTTP_CGI_EXEC_ERROR;
+  }
+  
+  return error;
 }
+
 
 /*!
  *  Process HTTP DELETE command
