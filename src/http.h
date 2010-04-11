@@ -86,6 +86,7 @@
 #define HTTP_HEADER_ERROR           ( -14 )   /* malfromed http header */
 #define HTTP_POST_DATA_TOO_BIG      ( -15 )   /* too many bytes in post block */
 #define HTTP_POST_IO_ERROR          ( -16 )   /* could not read http post data */
+#define HTTP_FILE_IO_ERROR          ( -17 )   /* error while accessing local file system */
 
 
 /*!

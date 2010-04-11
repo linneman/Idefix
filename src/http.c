@@ -111,7 +111,8 @@ static const HTTP_HASH_TYPE _httpErrorTab[] =
   { HTTP_NOT_IMPLEMENTED_YET, "http method of other feature not implmented yet" },
   { HTTP_HEADER_ERROR, "could not read http header or header is corrupted" },
   { HTTP_POST_DATA_TOO_BIG, "too many bytes in http post body" },
-  { HTTP_POST_IO_ERROR, "could not read http post data " }
+  { HTTP_POST_IO_ERROR, "could not read http post data " },
+  { HTTP_FILE_IO_ERROR, "error while accessing local file system" }
 };
 
 const int _httpErrorTabSize = sizeof( _httpErrorTab ) / sizeof( HTTP_HASH_TYPE );
@@ -1001,12 +1002,12 @@ static int http_put( HTTP_OBJ* this )
   if( bytes_written != this->body_len )
   {
     HTTP_SendHeader( this, HTTP_ACK_INTERNAL_ERROR );
-    error = HTTP_CGI_EXEC_ERROR;
+    error = HTTP_FILE_IO_ERROR;
   }
   else
   { 
     HTTP_SendHeader( this, HTTP_ACK_OK );
-    error = HTTP_CGI_EXEC_ERROR;
+    error = HTTP_OK;
   }
   
   return error;
