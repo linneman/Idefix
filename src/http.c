@@ -26,7 +26,7 @@
 /*! 
  *  Current server version in MMmmbb hex format (major.minor.build)
  */
-#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 4 ) )
+#define HTTP_SERVER_VERSION        ( ( 0 << 16 ) | ( 1 << 8 ) | ( 5 ) )
 
 
 /*!
@@ -185,62 +185,6 @@ static const int HttpFileExtMimeTableSize = sizeof(HttpFileExtMimeTable) / sizeo
 
 
 
-
-/*
- *  Helper function for determine the mime type in a given string
- */
-#if 0
-static HTTP_MIME_TYPE   _http_get_mime_type_from_string( const char *string )
-{
-  int i, index = HTTP_MIME_UNDEFINED;
-  
-  for( i=1; i < HttpMimeTypeTableSize; ++i )
-  {
-    if( strcasestr( string, HttpMimeTypeTable[i].txt ) != NULL )
-    {
-      index = i;
-      break;
-    }
-  }
-  
-  return HttpMimeTypeTable[index].id;
-}
-#endif
-
-
-/*
- *  Helper function to determine the mime type for a given filename
- */
-static HTTP_MIME_TYPE   _http_get_mime_type_from_filename( const char *filename )
-{
-  int len, i, j, index = HTTP_MIME_UNDEFINED;
-  
-  /* determine position of file extension in filename (last dot) */
-  len=strlen( filename );
-  for( i=len-1; i>=0; i-- )
-  {
-    if( filename[i] == '.' )
-      break;
-  }
-  
-  if( i==0 || i==(len-1) ) /* nothing found */
-    return HTTP_MIME_UNDEFINED;
-  
-  ++i;
-  
-  for( j=0; j < HttpFileExtMimeTableSize; ++j )
-  {
-    if( strcasestr( & filename[i], HttpFileExtMimeTable[j].txt ) != NULL )
-    {
-      index = j;
-      break;
-    }
-  }
-  
-  return HttpFileExtMimeTable[index].id;  
-}
-
-
 /*!
  *  trim string
  */
@@ -288,51 +232,56 @@ static void _http_trim( char *string, const int max_len )
 }
 
 
-/*!
- *  extract value for given key from http header
+/*
+ *  Helper function for determine the mime type in a given string
  */
-static int _http_get_value_for_key( 
-  char*       val,
-  const int   max_val_len, 
-  const char* keybuf,
-  const char* pbuf, 
-  const long  pbuf_len 
-)
+static HTTP_MIME_TYPE   _http_get_mime_type_from_string( const char *string )
 {
-  int         found = false;
-  const int   keylen = strlen( keybuf );
-  long        i, j;
+  int i, index = HTTP_MIME_UNDEFINED;
   
-  for( i=0; i < pbuf_len - keylen; ++i )
-  {  
-    found = true;
-    for( j=0; j<keylen; ++j )
+  for( i=1; i < HttpMimeTypeTableSize; ++i )
+  {
+    if( strcasestr( string, HttpMimeTypeTable[i].txt ) != NULL )
     {
-      if( toupper( keybuf[j] ) != toupper( pbuf[i+j] ) )
-      {
-        found = false;
-        break;
-      }
-    }
-    
-    if( found && ( pbuf[i+j]==':' ) ) 
-    {
-      strncpy( val, & pbuf[i+j+1], max_val_len );
-      val[max_val_len-1] = '\0';
-      _http_trim( val, max_val_len );
+      index = i;
       break;
     }
   }
+  
+  return HttpMimeTypeTable[index].id;
+}
 
-  if(!found)
+
+/*
+ *  Helper function to determine the mime type for a given filename
+ */
+static HTTP_MIME_TYPE   _http_get_mime_type_from_filename( const char *filename )
+{
+  int len, i, j, index = HTTP_MIME_UNDEFINED;
+  
+  /* determine position of file extension in filename (last dot) */
+  len=strlen( filename );
+  for( i=len-1; i>=0; i-- )
   {
-    val[0]='\0';
-    return false;
+    if( filename[i] == '.' )
+      break;
   }
-  else 
+  
+  if( i==0 || i==(len-1) ) /* nothing found */
+    return HTTP_MIME_UNDEFINED;
+  
+  ++i;
+  
+  for( j=0; j < HttpFileExtMimeTableSize; ++j )
   {
-    return true;
-  }  
+    if( strcasestr( & filename[i], HttpFileExtMimeTable[j].txt ) != NULL )
+    {
+      index = j;
+      break;
+    }
+  }
+  
+  return HttpFileExtMimeTable[index].id;  
 }
 
 
@@ -740,8 +689,20 @@ static int http_read_header( HTTP_OBJ* this )
   }
   search_path[j]='\0';
 
-  this->mimetyp = _http_get_mime_type_from_filename( url_path );
-  
+  /* get mime type */
+  if( HTTP_get_value_for_key( 
+    value_str, sizeof( value_str ), 
+    "MIME-TYPE", 
+    this->rcvbuf, this->header_len )
+    )
+  {
+    this->mimetyp = _http_get_mime_type_from_string( value_str );
+  }
+  else 
+  {
+    this->mimetyp = _http_get_mime_type_from_filename( url_path );
+  }
+
   printf( "URL-PATH: %s\n", url_path );
   printf( "MIME-TYPE: %s\n", HttpMimeTypeTable[this->mimetyp].txt );
   printf( "SEARCH-PATH: %s\n", search_path );
@@ -752,7 +713,7 @@ static int http_read_header( HTTP_OBJ* this )
   frl[frl_size-1]='\0';
 
   /* get keep-alive state */
-  if( _http_get_value_for_key( 
+  if( HTTP_get_value_for_key( 
     value_str, sizeof( value_str ), 
     "Connection", 
     this->rcvbuf, this->header_len )
@@ -763,7 +724,7 @@ static int http_read_header( HTTP_OBJ* this )
   }
 
   /* get received content length */
-  if( _http_get_value_for_key( 
+  if( HTTP_get_value_for_key( 
     value_str, sizeof( value_str ), 
     "Content-Length", 
     this->rcvbuf, this->header_len )
@@ -1329,6 +1290,67 @@ const char* HTTP_GetErrorMsg( int error )
 long HTTP_GetServerVersion( void )
 {
   return HTTP_SERVER_VERSION;
+}
+
+
+/*******************************************************************************
+ * HTTP_get_value_for_key() 
+ *                                                                         */ /*!
+ * extract value for given key from buffer (http header)
+ * 
+ * Function parameters
+ *     - val:          pointer to string where the found value is stored
+ *     - max_val_len:  max size of the val
+ *     - keybuf:       HTTP key to retrieve
+ *     - pbuf:         pointer to search buffer
+ *     - pbuf_len:     size of search buffer
+ *                                                                                                                                              
+ * Returnparameter
+ *     - R:            true when found, otherwise false
+ * 
+ *******************************************************************************/
+int HTTP_get_value_for_key( 
+  char*       val,
+  const int   max_val_len, 
+  const char* keybuf,
+  const char* pbuf, 
+  const long  pbuf_len 
+)
+{
+  int         found = false;
+  const int   keylen = strlen( keybuf );
+  long        i, j;
+  
+  for( i=0; i < pbuf_len - keylen; ++i )
+  {  
+    found = true;
+    for( j=0; j<keylen; ++j )
+    {
+      if( toupper( keybuf[j] ) != toupper( pbuf[i+j] ) )
+      {
+        found = false;
+        break;
+      }
+    }
+    
+    if( found && ( pbuf[i+j]==':' ) ) 
+    {
+      strncpy( val, & pbuf[i+j+1], max_val_len );
+      val[max_val_len-1] = '\0';
+      _http_trim( val, max_val_len );
+      break;
+    }
+  }
+
+  if(!found)
+  {
+    val[0]='\0';
+    return false;
+  }
+  else 
+  {
+    return true;
+  }  
 }
 
 

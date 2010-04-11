@@ -317,4 +317,28 @@ const char* HTTP_GetErrorMsg( int error );
 long HTTP_GetServerVersion( void );
 
 
+/*******************************************************************************
+ * HTTP_get_value_for_key() 
+ *                                                                         */ /*!
+ * extract value for given key from buffer (http header)
+ * 
+ * Function parameters
+ *     - val:          pointer to string where the found value is stored
+ *     - max_val_len:  max size of the val
+ *     - keybuf:       HTTP key to retrieve
+ *     - pbuf:         pointer to search buffer
+ *     - pbuf_len:     size of search buffer
+ *                                                                                                                                              
+ * Returnparameter
+ *     - R:            true when found, otherwise false
+ * 
+ *******************************************************************************/
+int HTTP_get_value_for_key( 
+  char*       val,
+  const int   max_val_len, 
+  const char* keybuf,
+  const char* pbuf, 
+  const long  pbuf_len 
+);
+
 #endif /* #ifndef _HTTP_H */
