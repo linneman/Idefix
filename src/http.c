@@ -573,8 +573,11 @@ static int _http_receive_header( HTTP_OBJ* this )
 static int _http_receive_body( HTTP_OBJ* this )
 {
   /* check for enough memory space before reading  */
-  if( this->body_len > MAX_HTML_BUF_LEN - this->header_len )
+  if( this->body_len > MAX_HTML_BUF_LEN - this->header_len + 1)
     HTTP_POST_DATA_TOO_BIG;
+
+  /* ensure EOL termination of body string */
+  this->body_ptr[this->body_len] = '\0';
     
   if( HTTP_SOCKET_RECV( this->socket, this->body_ptr, this->body_len ) != this->body_len )
     return HTTP_POST_IO_ERROR;
