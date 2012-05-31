@@ -15,3 +15,12 @@ autom4te.cache
 Makefile
 .deps
 src/idefix
+
+Makefile.in
+aclocal.m4
+config.h.in
+configure
+depcomp
+install-sh
+missing
+src/Makefile.in
